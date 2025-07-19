@@ -224,6 +224,23 @@ fn validate_key_storage_type(storage_type: &str) -> Result<(), ValidationError> 
     }
 }
 
+/// Configuration for a network node (RPC/WebSocket endpoints)
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct NetworkNode {
+    /// Node name (e.g., "Local Anvil", "Infura", "Alchemy")
+    #[validate(length(min = 1))]
+    pub name: String,
+
+    /// RPC URL for the node
+    #[validate(url)]
+    pub rpc_url: String,
+
+    /// WebSocket URL for the node (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(url)]
+    pub ws_url: Option<String>,
+}
+
 /// Configuration for a blockchain network
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct Network {
@@ -231,19 +248,14 @@ pub struct Network {
     #[validate(length(min = 1))]
     pub name: String,
 
-    /// RPC URL for the network
-    #[validate(url)]
-    pub rpc_url: String,
-
-    /// WebSocket URL for the network (optional, defaults to RPC URL)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(url)]
-    pub ws_url: Option<String>,
-
     /// Transaction type to use ("legacy" or "eip1559")
     #[serde(default = "default_transaction_type")]
     #[validate(custom = "validate_transaction_type")]
     pub transaction_type: String,
+
+    /// Network nodes (RPC/WebSocket endpoints)
+    #[validate(length(min = 1, message = "At least one node must be configured"))]
+    pub nodes: Vec<NetworkNode>,
 
     /// Gas configuration for this network
     #[serde(default)]
@@ -257,18 +269,30 @@ pub struct Network {
     /// Gas token symbol (e.g., "ETH", "BNB")
     #[serde(default = "default_gas_token_symbol")]
     pub gas_token_symbol: String,
+
+    /// Legacy fields for backward compatibility (deprecated)
+    #[serde(skip_serializing, skip_deserializing)]
+    pub rpc_url: Option<String>,
+
+    #[serde(skip_serializing, skip_deserializing)]
+    pub ws_url: Option<String>,
 }
 
 impl Default for Network {
     fn default() -> Self {
         Self {
             name: "localhost".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
             transaction_type: default_transaction_type(),
+            nodes: vec![NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             gas_config: GasConfig::default(),
             gas_token: default_gas_token(),
             gas_token_symbol: default_gas_token_symbol(),
+            rpc_url: None,
+            ws_url: None,
         }
     }
 }

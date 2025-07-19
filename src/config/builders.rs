@@ -179,12 +179,17 @@ impl NetworkBuilder {
     pub fn build(self) -> Network {
         Network {
             name: self.name,
-            rpc_url: self.rpc_url,
-            ws_url: None,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Default Node".to_string(),
+                rpc_url: self.rpc_url,
+                ws_url: None,
+            }],
             transaction_type: self.transaction_type,
             gas_config: self.gas_config,
             gas_token: self.gas_token,
             gas_token_symbol: self.gas_token_symbol,
+            rpc_url: None,
+            ws_url: None,
         }
     }
 

@@ -57,6 +57,12 @@ pub enum EventMonitorError {
 /// Result type for event monitor operations
 pub type Result<T> = std::result::Result<T, EventMonitorError>;
 
+impl From<String> for EventMonitorError {
+    fn from(msg: String) -> Self {
+        EventMonitorError::Other(msg)
+    }
+}
+
 /// Extension trait for adding context to errors
 pub trait EventMonitorErrorContext<T> {
     /// Add monitor name context to the error

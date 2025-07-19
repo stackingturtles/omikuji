@@ -5,6 +5,7 @@ use super::metrics::{EventMonitorMetrics, EventMonitorMetricsContext};
 use super::models::EventMonitor;
 use super::response_handler::ResponseHandler;
 use super::webhook_caller::WebhookCaller;
+use crate::database::{DatabasePool, EventRepository, models::NewProcessedEvent};
 use crate::network::NetworkManager;
 use alloy::primitives::Address;
 use alloy::providers::Provider;
@@ -13,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Manages event subscriptions for multiple monitors
 pub struct EventListener {
@@ -21,6 +22,7 @@ pub struct EventListener {
     webhook_caller: Arc<WebhookCaller>,
     response_handler: Arc<ResponseHandler>,
     monitors: Vec<EventMonitor>,
+    db_pool: Option<DatabasePool>,
 }
 
 /// Processed event data ready for webhook
@@ -59,6 +61,24 @@ impl EventListener {
             webhook_caller,
             response_handler,
             monitors,
+            db_pool: None,
+        }
+    }
+    
+    /// Create a new event listener with database support
+    pub fn with_database(
+        network_manager: Arc<NetworkManager>,
+        webhook_caller: Arc<WebhookCaller>,
+        response_handler: Arc<ResponseHandler>,
+        monitors: Vec<EventMonitor>,
+        db_pool: DatabasePool,
+    ) -> Self {
+        Self {
+            network_manager,
+            webhook_caller,
+            response_handler,
+            monitors,
+            db_pool: Some(db_pool),
         }
     }
 
@@ -128,38 +148,81 @@ impl EventListener {
             .await
             .map_err(|_| EventMonitorError::NetworkNotFound(network_name.clone()))?;
 
-        // For now, use HTTP provider with polling
-        // TODO: In production, use WebSocket for better performance
-        let provider = self
-            .network_manager
-            .get_provider(&network_name)
-            .map_err(|e| EventMonitorError::ProviderError {
-                network: network_name.clone(),
-                reason: e.to_string(),
-            })?;
+        // Check if WebSocket is available for this network
+        let use_websocket = self.network_manager.has_ws_support(&network_name);
+        
+        if use_websocket {
+            info!("Using WebSocket for event monitoring on network '{}'", network_name);
+            // Get WebSocket provider
+            let ws_provider = self
+                .network_manager
+                .get_ws_provider(&network_name)
+                .await
+                .map_err(|e| EventMonitorError::ProviderError {
+                    network: network_name.clone(),
+                    reason: e.to_string(),
+                })?;
+            
+            let webhook_caller = self.webhook_caller.clone();
+            let response_handler = self.response_handler.clone();
+            let db_pool = self.db_pool.clone();
 
-        let webhook_caller = self.webhook_caller.clone();
-        let response_handler = self.response_handler.clone();
+            let handle = tokio::spawn(async move {
+                if let Err(e) = Self::monitor_network_events_ws(
+                    ws_provider,
+                    network_name.clone(),
+                    monitors,
+                    webhook_caller,
+                    response_handler,
+                    db_pool,
+                )
+                .await
+                {
+                    error!(
+                        "WebSocket event monitoring error for network '{}': {}",
+                        network_name, e
+                    );
+                    EventMonitorMetrics::global().update_active_subscriptions(&network_name, 0);
+                }
+            });
 
-        let handle = tokio::spawn(async move {
-            if let Err(e) = Self::monitor_network_events(
-                provider,
-                network_name.clone(),
-                monitors,
-                webhook_caller,
-                response_handler,
-            )
-            .await
-            {
-                error!(
-                    "Event monitoring error for network '{}': {}",
-                    network_name, e
-                );
-                EventMonitorMetrics::global().update_active_subscriptions(&network_name, 0);
-            }
-        });
+            Ok(handle)
+        } else {
+            info!("Using HTTP polling for event monitoring on network '{}'", network_name);
+            // Fall back to HTTP provider with polling
+            let provider = self
+                .network_manager
+                .get_provider(&network_name)
+                .map_err(|e| EventMonitorError::ProviderError {
+                    network: network_name.clone(),
+                    reason: e.to_string(),
+                })?;
 
-        Ok(handle)
+            let webhook_caller = self.webhook_caller.clone();
+            let response_handler = self.response_handler.clone();
+            let db_pool = self.db_pool.clone();
+
+            let handle = tokio::spawn(async move {
+                if let Err(e) = Self::monitor_network_events(
+                    provider,
+                    network_name.clone(),
+                    monitors,
+                    webhook_caller,
+                    response_handler,
+                    db_pool,
+                )
+                .await
+                {
+                    error!(
+                        "Event monitoring error for network '{}': {}",
+                        network_name, e
+                    );
+                    EventMonitorMetrics::global().update_active_subscriptions(&network_name, 0);
+                }
+            });
+
+            Ok(handle)
+        }
     }
 
     /// Monitor events for a specific network
@@ -169,6 +232,7 @@ impl EventListener {
         monitors: Vec<EventMonitor>,
         webhook_caller: Arc<WebhookCaller>,
         response_handler: Arc<ResponseHandler>,
+        db_pool: Option<DatabasePool>,
     ) -> Result<()> {
         let (tx, mut rx) = mpsc::channel(100);
 
@@ -189,6 +253,7 @@ impl EventListener {
                 &network_name,
                 &webhook_caller,
                 &response_handler,
+                &db_pool,
             )
             .await
             {
@@ -199,6 +264,131 @@ impl EventListener {
             }
         }
 
+        Ok(())
+    }
+    
+    /// Monitor events for a specific network using WebSocket
+    async fn monitor_network_events_ws(
+        provider: Arc<crate::network::WsProvider>,
+        network_name: String,
+        monitors: Vec<EventMonitor>,
+        webhook_caller: Arc<WebhookCaller>,
+        response_handler: Arc<ResponseHandler>,
+        db_pool: Option<DatabasePool>,
+    ) -> Result<()> {
+        let _metrics = EventMonitorMetrics::global();
+        
+        // Create filters and subscriptions for each monitor
+        for monitor in monitors {
+            let monitor_name = monitor.name.clone();
+            let network = network_name.clone();
+            let webhook_caller = webhook_caller.clone();
+            let response_handler = response_handler.clone();
+            let provider = provider.clone();
+            let db_pool = db_pool.clone();
+            
+            tokio::spawn(async move {
+                loop {
+                    match Self::subscribe_to_ws_events(
+                        provider.clone(),
+                        monitor.clone(),
+                        network.clone(),
+                        webhook_caller.clone(),
+                        response_handler.clone(),
+                        db_pool.clone(),
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            info!("WebSocket subscription ended normally for monitor '{}'", monitor_name);
+                            break;
+                        }
+                        Err(e) => {
+                            error!(
+                                "WebSocket subscription error for monitor '{}': {}. Reconnecting...",
+                                monitor_name, e
+                            );
+                            // TODO: Add error metrics tracking
+                            
+                            // Wait before reconnecting
+                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Keep the main task running indefinitely
+        // The spawned tasks will handle the monitoring
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+        }
+    }
+    
+    /// Subscribe to events for a specific monitor using WebSocket
+    async fn subscribe_to_ws_events(
+        provider: Arc<crate::network::WsProvider>,
+        monitor: EventMonitor,
+        network_name: String,
+        webhook_caller: Arc<WebhookCaller>,
+        response_handler: Arc<ResponseHandler>,
+        db_pool: Option<DatabasePool>,
+    ) -> Result<()> {
+        use alloy::rpc::types::eth::Filter;
+        use futures::StreamExt;
+        
+        let _metrics = EventMonitorMetrics::global();
+        
+        // Parse event signature to get selector
+        let event_selector = Self::parse_event_selector(&monitor.event_signature)?;
+        
+        // Create filter for the specific event
+        let filter = Filter::new()
+            .address(monitor.contract_address)
+            .event_signature(event_selector);
+            
+        info!(
+            "Creating WebSocket subscription for '{}' on contract {} for monitor '{}'",
+            monitor.event_signature, monitor.contract_address, monitor.name
+        );
+        
+        // Subscribe to logs
+        let subscription = provider
+            .subscribe_logs(&filter)
+            .await
+            .map_err(|e| EventMonitorError::SubscriptionError {
+                monitor: monitor.name.clone(),
+                reason: e.to_string(),
+            })?;
+        
+        let mut stream = subscription.into_stream();
+        
+        // Process events from the stream
+        while let Some(log) = stream.next().await {
+            debug!(
+                "Received event for monitor '{}': tx={}, block={}",
+                monitor.name,
+                log.transaction_hash.map(|h| h.to_string()).unwrap_or_default(),
+                log.block_number.unwrap_or_default()
+            );
+            
+            if let Err(e) = Self::process_event(
+                &monitor,
+                log,
+                &network_name,
+                &webhook_caller,
+                &response_handler,
+                &db_pool,
+            )
+            .await
+            {
+                error!(
+                    "Failed to process event for monitor '{}': {}",
+                    monitor.name, e
+                );
+            }
+        }
+        
         Ok(())
     }
 
@@ -372,15 +562,43 @@ impl EventListener {
         network_name: &str,
         webhook_caller: &Arc<WebhookCaller>,
         response_handler: &Arc<ResponseHandler>,
+        db_pool: &Option<DatabasePool>,
     ) -> Result<()> {
         let metrics_ctx =
             EventMonitorMetricsContext::new(monitor.name.clone(), network_name.to_string());
+        let tx_hash = log.transaction_hash.unwrap_or_default().to_string();
+        let log_index = log.log_index.unwrap_or_default() as i32;
+        
         debug!(
-            "Processing event for monitor '{}' at block {} (tx: {})",
+            "Processing event for monitor '{}' at block {} (tx: {}, log_index: {})",
             monitor.name,
             log.block_number.unwrap_or_default(),
-            log.transaction_hash.unwrap_or_default()
+            tx_hash,
+            log_index
         );
+
+        // Check for duplicate processing if database is available
+        if let Some(pool) = db_pool {
+            match EventRepository::is_event_processed(pool, &tx_hash, log_index).await {
+                Ok(true) => {
+                    warn!(
+                        "Event already processed: tx={}, log_index={} for monitor '{}'",
+                        tx_hash, log_index, monitor.name
+                    );
+                    return Ok(()); // Skip duplicate event
+                }
+                Ok(false) => {
+                    debug!("Event not yet processed, continuing...");
+                }
+                Err(e) => {
+                    // Log the error but continue processing to avoid losing events
+                    error!(
+                        "Failed to check duplicate event status: {}. Processing anyway.",
+                        e
+                    );
+                }
+            }
+        }
 
         // Decode event data
         let processed_event = Self::decode_event_data(&log, monitor)?;
@@ -404,6 +622,32 @@ impl EventListener {
         response_handler
             .handle_response(monitor, response, &processed_event, &context)
             .await?;
+
+        // Mark event as processed in database if available
+        if let Some(pool) = db_pool {
+            let new_event = NewProcessedEvent {
+                transaction_hash: tx_hash,
+                log_index,
+                contract_address: monitor.contract_address.to_string(),
+                event_type: processed_event.event_name.clone(),
+                event_data: Some(serde_json::json!({
+                    "monitor": monitor.name,
+                    "topics": processed_event.topics,
+                    "data": processed_event.data,
+                    "decoded_args": processed_event.decoded_args,
+                })),
+            };
+            
+            match EventRepository::mark_event_processed(pool, new_event).await {
+                Ok(_) => {
+                    debug!("Event marked as processed in database");
+                }
+                Err(e) => {
+                    // Log error but don't fail the processing
+                    error!("Failed to mark event as processed in database: {}", e);
+                }
+            }
+        }
 
         // Record successful processing
         metrics_ctx.event_processed(&processed_event.event_name);

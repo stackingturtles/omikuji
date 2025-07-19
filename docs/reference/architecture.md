@@ -39,9 +39,11 @@ Handles configuration parsing and validation:
 
 Manages blockchain connections:
 - **`provider.rs`**: RPC provider management
+- **`ws_provider.rs`**: WebSocket provider with automatic reconnection
 - Connection pooling per network
 - Network-specific configurations
 - Wallet management and signing
+- Support for multiple nodes per network
 
 ### 4. Datafeed Module (`src/datafeed/`)
 
@@ -197,6 +199,21 @@ CREATE TABLE transaction_log (
     gas_cost NUMERIC,
     status VARCHAR(50) NOT NULL,
     datafeed_name VARCHAR(255)
+);
+```
+
+### processed_events Table
+
+```sql
+CREATE TABLE processed_events (
+    id SERIAL PRIMARY KEY,
+    transaction_hash VARCHAR(66) NOT NULL,
+    log_index INTEGER NOT NULL,
+    contract_address VARCHAR(42) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    event_data JSONB NULL,
+    UNIQUE(transaction_hash, log_index)
 );
 ```
 

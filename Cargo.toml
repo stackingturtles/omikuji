@@ -42,7 +42,7 @@ prometheus-hyper = "0.1"
 hyper = { version = "1.0", features = ["server", "http1"] }
 
 # Retry mechanisms
-backoff = "0.4"
+backoff = { version = "0.4", features = ["futures"] }
 jsonpath-rust = "0.3"
 
 # Database

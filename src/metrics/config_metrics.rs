@@ -207,9 +207,14 @@ impl ConfigMetrics {
 
         // Set network configs
         for network in &config.networks {
+            // Use the first node's RPC URL for metrics
+            let rpc_url = network.nodes.first()
+                .map(|node| node.rpc_url.as_str())
+                .unwrap_or("");
+            
             Self::set_network_config(
                 &network.name,
-                &network.rpc_url,
+                rpc_url,
                 &network.transaction_type,
                 network.gas_config.gas_multiplier,
             );

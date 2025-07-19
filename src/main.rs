@@ -456,12 +456,22 @@ async fn main() -> Result<()> {
         ));
 
         // Create event listener with all configured monitors
-        let event_listener = omikuji::event_monitors::EventListener::new(
-            Arc::clone(&network_manager),
-            webhook_caller,
-            response_handler,
-            config.event_monitors.clone(),
-        );
+        let event_listener = if let Some(ref pool) = &database_pool {
+            omikuji::event_monitors::EventListener::with_database(
+                Arc::clone(&network_manager),
+                webhook_caller,
+                response_handler,
+                config.event_monitors.clone(),
+                pool.clone(),
+            )
+        } else {
+            omikuji::event_monitors::EventListener::new(
+                Arc::clone(&network_manager),
+                webhook_caller,
+                response_handler,
+                config.event_monitors.clone(),
+            )
+        };
 
         // Start monitoring
         match event_listener.start_monitoring().await {
