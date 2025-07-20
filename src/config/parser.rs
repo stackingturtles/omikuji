@@ -42,8 +42,9 @@ pub fn load_config<P: AsRef<Path>>(config_path: P) -> Result<OmikujiConfig, Conf
         .map_err(ConfigError::FileError)?;
 
     // Parse YAML with backward compatibility
-    let mut raw_config: serde_yaml::Value = serde_yaml::from_str(&content).map_err(ConfigError::ParseError)?;
-    
+    let mut raw_config: serde_yaml::Value =
+        serde_yaml::from_str(&content).map_err(ConfigError::ParseError)?;
+
     // Apply backward compatibility transformation for networks
     if let Some(networks) = raw_config.get_mut("networks") {
         if let Some(networks_array) = networks.as_sequence_mut() {
@@ -52,9 +53,10 @@ pub fn load_config<P: AsRef<Path>>(config_path: P) -> Result<OmikujiConfig, Conf
             }
         }
     }
-    
+
     // Now deserialize the transformed config
-    let config: OmikujiConfig = serde_yaml::from_value(raw_config).map_err(ConfigError::ParseError)?;
+    let config: OmikujiConfig =
+        serde_yaml::from_value(raw_config).map_err(ConfigError::ParseError)?;
 
     // Validate the configuration
     config.validate().map_err(ConfigError::ValidationError)?;
@@ -124,7 +126,7 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
         // Extract the old fields
         let rpc_url = network.get("rpc_url").cloned();
         let ws_url = network.get("ws_url").cloned();
-        
+
         if let Some(rpc_url) = rpc_url {
             // Create a new node from the old fields
             let mut node = serde_yaml::Mapping::new();
@@ -136,17 +138,14 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
                 serde_yaml::Value::String("rpc_url".to_string()),
                 rpc_url.clone(),
             );
-            
+
             if let Some(ws_url) = ws_url {
-                node.insert(
-                    serde_yaml::Value::String("ws_url".to_string()),
-                    ws_url,
-                );
+                node.insert(serde_yaml::Value::String("ws_url".to_string()), ws_url);
             }
-            
+
             // Create nodes array
             let nodes = vec![serde_yaml::Value::Mapping(node)];
-            
+
             // Add nodes to the network and remove old fields
             if let Some(network_map) = network.as_mapping_mut() {
                 network_map.insert(
@@ -155,14 +154,15 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
                 );
                 network_map.remove(&serde_yaml::Value::String("rpc_url".to_string()));
                 network_map.remove(&serde_yaml::Value::String("ws_url".to_string()));
-                network_map.remove(&serde_yaml::Value::String("url".to_string())); // Also handle 'url' field
+                network_map.remove(&serde_yaml::Value::String("url".to_string()));
+                // Also handle 'url' field
             }
         }
     }
     // Also handle 'url' field (another variation of the old format)
     else if network.get("url").is_some() && network.get("nodes").is_none() {
         let url = network.get("url").cloned();
-        
+
         if let Some(url) = url {
             // Create a new node from the old field
             let mut node = serde_yaml::Mapping::new();
@@ -170,14 +170,11 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
                 serde_yaml::Value::String("name".to_string()),
                 serde_yaml::Value::String("Default Node".to_string()),
             );
-            node.insert(
-                serde_yaml::Value::String("rpc_url".to_string()),
-                url,
-            );
-            
+            node.insert(serde_yaml::Value::String("rpc_url".to_string()), url);
+
             // Create nodes array
             let nodes = vec![serde_yaml::Value::Mapping(node)];
-            
+
             // Add nodes to the network and remove old field
             if let Some(network_map) = network.as_mapping_mut() {
                 network_map.insert(
@@ -193,12 +190,13 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // Helper function for testing configuration parsing from string
     fn load_config_from_str(content: &str) -> Result<OmikujiConfig, ConfigError> {
         // Parse YAML with backward compatibility
-        let mut raw_config: serde_yaml::Value = serde_yaml::from_str(content).map_err(ConfigError::ParseError)?;
-        
+        let mut raw_config: serde_yaml::Value =
+            serde_yaml::from_str(content).map_err(ConfigError::ParseError)?;
+
         // Apply backward compatibility transformation for networks
         if let Some(networks) = raw_config.get_mut("networks") {
             if let Some(networks_array) = networks.as_sequence_mut() {
@@ -207,10 +205,11 @@ mod tests {
                 }
             }
         }
-        
+
         // Now deserialize the transformed config
-        let config: OmikujiConfig = serde_yaml::from_value(raw_config).map_err(ConfigError::ParseError)?;
-        
+        let config: OmikujiConfig =
+            serde_yaml::from_value(raw_config).map_err(ConfigError::ParseError)?;
+
         Ok(config)
     }
 
@@ -269,7 +268,13 @@ mod tests {
         let config = load_config_from_str(config_str).unwrap();
         assert_eq!(config.networks.len(), 1);
         assert_eq!(config.networks[0].nodes.len(), 1);
-        assert_eq!(config.networks[0].nodes[0].rpc_url, "https://eth.llamarpc.com");
-        assert_eq!(config.networks[0].nodes[0].ws_url.as_ref().unwrap(), "wss://eth.llamarpc.com");
+        assert_eq!(
+            config.networks[0].nodes[0].rpc_url,
+            "https://eth.llamarpc.com"
+        );
+        assert_eq!(
+            config.networks[0].nodes[0].ws_url.as_ref().unwrap(),
+            "wss://eth.llamarpc.com"
+        );
     }
 }

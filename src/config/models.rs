@@ -43,6 +43,10 @@ pub struct OmikujiConfig {
     /// Event monitors configuration
     #[serde(default)]
     pub event_monitors: Vec<EventMonitor>,
+
+    /// Default execution limits for event monitors
+    #[serde(default)]
+    pub default_execution_limits: ExecutionLimits,
 }
 
 /// Configuration for database cleanup task
@@ -484,5 +488,27 @@ pub fn validate_transaction_type(tx_type: &str) -> Result<(), ValidationError> {
     match tx_type.to_lowercase().as_str() {
         "legacy" | "eip1559" => Ok(()),
         _ => Err(ValidationError::new("invalid_transaction_type")),
+    }
+}
+
+/// Configuration for execution limits when processing webhook responses
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, PartialEq)]
+#[serde(default)]
+pub struct ExecutionLimits {
+    /// Maximum value in wei that can be sent with a contract call
+    #[validate(length(min = 1))]
+    pub max_value_wei: String,
+
+    /// Maximum gas price in gwei that can be used for transactions
+    #[validate(range(min = 1))]
+    pub max_gas_price_gwei: u64,
+}
+
+impl Default for ExecutionLimits {
+    fn default() -> Self {
+        Self {
+            max_value_wei: "100000000000000000".to_string(), // 0.1 ETH default
+            max_gas_price_gwei: 100,                         // 100 gwei default
+        }
     }
 }

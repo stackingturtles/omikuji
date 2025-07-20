@@ -98,6 +98,7 @@ mod tests {
                 retry_delay_seconds: 5,
             },
             response: ResponseConfig::default(),
+            execution_limits: None,
         }];
 
         let result = parse_event_monitors(monitors);
@@ -121,6 +122,7 @@ mod tests {
                 retry_delay_seconds: 5,
             },
             response: ResponseConfig::default(),
+            execution_limits: None,
         };
 
         let monitors = vec![monitor.clone(), monitor];

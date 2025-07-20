@@ -59,6 +59,7 @@ fn test_event_monitor_validation() {
             retry_delay_seconds: 5,
         },
         response: ResponseConfig::default(),
+        execution_limits: None,
     };
 
     assert!(monitor.validate().is_ok());
@@ -134,6 +135,7 @@ fn test_env_var_substitution() {
             retry_delay_seconds: 5,
         },
         response: ResponseConfig::default(),
+        execution_limits: None,
     };
 
     let parsed = parse_event_monitors(vec![monitor]).unwrap();

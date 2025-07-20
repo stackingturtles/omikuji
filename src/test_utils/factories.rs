@@ -264,12 +264,12 @@ impl TransactionDetailsFactory {
 #[cfg(test)]
 pub async fn create_test_db_pool() -> Pool<Postgres> {
     use std::env;
-    
+
     // Use TEST_DATABASE_URL if available, otherwise use DATABASE_URL
     let database_url = env::var("TEST_DATABASE_URL")
         .or_else(|_| env::var("DATABASE_URL"))
         .expect("Neither TEST_DATABASE_URL nor DATABASE_URL is set");
-    
+
     PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)

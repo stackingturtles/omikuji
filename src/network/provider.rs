@@ -52,7 +52,7 @@ pub struct NetworkManager {
 
     /// Network configurations
     networks: HashMap<String, Network>,
-    
+
     /// WebSocket connection pool
     ws_pool: WsConnectionPool,
 }
@@ -68,9 +68,10 @@ impl NetworkManager {
 
         for network in networks {
             // Use the first node's RPC URL for now
-            let first_node = network.nodes.first()
-                .ok_or_else(|| anyhow::anyhow!("Network {} has no nodes configured", network.name))?;
-            
+            let first_node = network.nodes.first().ok_or_else(|| {
+                anyhow::anyhow!("Network {} has no nodes configured", network.name)
+            })?;
+
             let provider = Self::create_provider(&first_node.rpc_url)
                 .await
                 .with_context(|| {
@@ -301,23 +302,28 @@ impl NetworkManager {
                 )
             })
     }
-    
+
     /// Get a WebSocket provider for a given network
     pub async fn get_ws_provider(&self, network_name: &str) -> Result<Arc<WsProvider>> {
-        let network = self.networks
+        let network = self
+            .networks
             .get(network_name)
             .ok_or_else(|| NetworkError::NetworkNotFound(network_name.to_string()))?;
-        
+
         // Use the first node that has a WebSocket URL
-        let node_with_ws = network.nodes.iter()
+        let node_with_ws = network
+            .nodes
+            .iter()
             .find(|node| node.ws_url.is_some())
-            .ok_or_else(|| anyhow::anyhow!("Network {} has no WebSocket URLs configured", network_name))?;
-        
+            .ok_or_else(|| {
+                anyhow::anyhow!("Network {} has no WebSocket URLs configured", network_name)
+            })?;
+
         let ws_url = node_with_ws.ws_url.as_ref().unwrap();
-        
+
         self.ws_pool.get_provider(network_name, ws_url).await
     }
-    
+
     /// Check if a network has WebSocket support
     pub fn has_ws_support(&self, network_name: &str) -> bool {
         self.networks

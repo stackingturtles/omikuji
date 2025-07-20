@@ -173,6 +173,105 @@ datafeeds:
 - Description: Path to extract Unix timestamp from JSON
 - Example: `data.last_updated`
 
+## Event Monitors Section
+
+Configure real-time blockchain event monitoring with webhook notifications.
+
+```yaml
+event_monitors:
+  - name: <string>                      # Required: Unique monitor identifier
+    network: <string>                   # Required: Network name reference
+    contract_address: <string>          # Required: Contract to monitor (0x...)
+    event_signature: <string>           # Required: Event signature
+    webhook:                            # Required: Webhook configuration
+      url: <string>                     # Required: Webhook endpoint URL
+      method: <string>                  # Required: HTTP method (POST/PUT)
+      headers: <object>                 # Optional: HTTP headers
+      timeout_seconds: <integer>        # Optional: Request timeout (default: 30)
+      retry_attempts: <integer>         # Optional: Retry count (default: 3)
+      retry_delay_seconds: <integer>    # Optional: Retry delay (default: 5)
+    response:                           # Required: Response handling
+      type: <string>                    # Required: Response type
+      contract_call: <object>           # Conditional: Required if type=contract_call
+      validation: <object>              # Optional: Response validation
+    execution_limits: <object>          # Optional: Execution safety limits
+```
+
+### Event Monitor Fields
+
+#### `name` (required)
+- Type: `string`
+- Description: Unique identifier for the event monitor
+- Example: `price_oracle_requests`, `token_transfers`
+
+#### `network` (required)
+- Type: `string`
+- Description: Network to monitor (must match a configured network)
+- Example: `ethereum`, `base`
+
+#### `contract_address` (required)
+- Type: `string`
+- Description: Contract address to monitor for events
+- Format: `0x` prefixed hex address
+- Example: `0x1234567890123456789012345678901234567890`
+
+#### `event_signature` (required)
+- Type: `string`
+- Description: Event signature to monitor
+- Format: `EventName(type1 name1, type2 name2, ...)`
+- Example: `Transfer(address indexed from, address indexed to, uint256 value)`
+
+#### `webhook` (required)
+- Type: `object`
+- Description: Webhook endpoint configuration
+- Fields:
+  - `url`: HTTP(S) endpoint to call
+  - `method`: HTTP method (`POST` or `PUT`)
+  - `headers`: Optional key-value pairs for HTTP headers
+  - `timeout_seconds`: Request timeout (default: 30)
+  - `retry_attempts`: Number of retries on failure (default: 3)
+  - `retry_delay_seconds`: Delay between retries (default: 5)
+
+#### `response` (required)
+- Type: `object`
+- Description: How to handle webhook responses
+- Fields:
+  - `type`: Response handling type
+    - `log_only`: Only log the response
+    - `contract_call`: Execute contract calls from response
+    - `store_db`: Store response in database
+    - `multi_action`: Multiple actions
+  - `contract_call`: Configuration for contract calls (required if type=contract_call)
+  - `validation`: Optional response validation rules
+
+#### `contract_call` (conditional)
+- Type: `object`
+- Required when: `response.type = contract_call`
+- Fields:
+  - `target_contract`: Target contract (use `{event.address}` for same contract)
+  - `max_gas_price_gwei`: Maximum gas price in gwei
+  - `gas_limit_multiplier`: Gas estimation multiplier (default: 1.2)
+  - `value_wei`: ETH value to send (default: 0)
+
+#### `execution_limits` (optional)
+- Type: `object`
+- Description: Safety limits for contract execution
+- Fields:
+  - `max_value_wei`: Maximum ETH value per transaction (as string)
+  - `max_gas_price_gwei`: Maximum gas price in gwei
+
+### Default Execution Limits
+
+Set global defaults for all event monitors:
+
+```yaml
+default_execution_limits:
+  max_value_wei: "1000000000000000000"  # 1 ETH
+  max_gas_price_gwei: 100
+```
+
+Individual monitors can override these defaults.
+
 ## Gas Configuration
 
 Detailed gas configuration options for each network.
@@ -274,6 +373,47 @@ datafeeds:
     feed_url: https://api.coinbase.com/v2/exchange-rates?currency=BTC
     feed_json_path: data.rates.USD
     feed_json_path_timestamp: data.epoch
+
+# Event monitor definitions
+event_monitors:
+  # Monitor oracle price requests
+  - name: price_oracle_requests
+    network: ethereum
+    contract_address: "0x1234567890123456789012345678901234567890"
+    event_signature: "PriceRequest(uint256 indexed requestId, address requester)"
+    webhook:
+      url: https://api.example.com/handle-price-request
+      method: POST
+      headers:
+        Authorization: "Bearer YOUR_API_TOKEN"
+      timeout_seconds: 30
+      retry_attempts: 3
+    response:
+      type: contract_call
+      contract_call:
+        target_contract: "{event.address}"
+        max_gas_price_gwei: 50
+        gas_limit_multiplier: 1.2
+        value_wei: 0
+    execution_limits:
+      max_value_wei: "0"
+      max_gas_price_gwei: 100
+
+  # Monitor large token transfers
+  - name: large_transfers
+    network: base
+    contract_address: "0xABCDEF1234567890123456789012345678901234"
+    event_signature: "Transfer(address indexed from, address indexed to, uint256 value)"
+    webhook:
+      url: https://api.example.com/monitor-transfers
+      method: POST
+    response:
+      type: log_only
+
+# Default execution limits for all monitors
+default_execution_limits:
+  max_value_wei: "1000000000000000000"  # 1 ETH
+  max_gas_price_gwei: 150
 ```
 
 ## Scheduled Tasks Section

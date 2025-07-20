@@ -224,5 +224,6 @@ fn create_test_config() -> OmikujiConfig {
         },
         scheduled_tasks: vec![],
         event_monitors: vec![],
+        default_execution_limits: Default::default(),
     }
 }

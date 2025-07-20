@@ -108,6 +108,7 @@ impl OmikujiConfigBuilder {
             gas_price_feeds: self.gas_price_feeds,
             scheduled_tasks: self.scheduled_tasks,
             event_monitors: Vec::new(),
+            default_execution_limits: Default::default(),
         }
     }
 }
@@ -678,7 +679,10 @@ mod tests {
 
         assert_eq!(network.name, "ethereum-mainnet");
         assert_eq!(network.nodes.len(), 1);
-        assert_eq!(network.nodes[0].rpc_url, "https://eth-mainnet.alchemyapi.io/v2/test");
+        assert_eq!(
+            network.nodes[0].rpc_url,
+            "https://eth-mainnet.alchemyapi.io/v2/test"
+        );
         assert_eq!(network.gas_token, "ethereum");
         assert_eq!(network.gas_token_symbol, "ETH");
     }

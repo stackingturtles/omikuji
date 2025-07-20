@@ -114,7 +114,7 @@ impl EventRepository {
         limit: Option<i64>,
     ) -> Result<Vec<ProcessedEvent>> {
         let limit = limit.unwrap_or(100);
-        
+
         let records = sqlx::query_as!(
             ProcessedEvent,
             r#"
@@ -141,10 +141,7 @@ impl EventRepository {
     }
 
     /// Clean up old processed events
-    pub async fn cleanup_old_events(
-        pool: &PgPool,
-        retention_days: i32,
-    ) -> Result<i64> {
+    pub async fn cleanup_old_events(pool: &PgPool, retention_days: i32) -> Result<i64> {
         let result = sqlx::query!(
             r#"
             DELETE FROM omikuji.processed_events
@@ -156,7 +153,7 @@ impl EventRepository {
         .await?;
 
         let deleted_count = result.rows_affected() as i64;
-        
+
         if deleted_count > 0 {
             debug!(
                 "Cleaned up {} old processed events (retention: {} days)",
@@ -168,9 +165,7 @@ impl EventRepository {
     }
 
     /// Get the count of processed events by type
-    pub async fn get_event_counts_by_type(
-        pool: &PgPool,
-    ) -> Result<Vec<(String, i64)>> {
+    pub async fn get_event_counts_by_type(pool: &PgPool) -> Result<Vec<(String, i64)>> {
         let records = sqlx::query!(
             r#"
             SELECT 
@@ -211,36 +206,29 @@ mod tests {
         };
 
         // Check that event is not processed initially
-        let is_processed = EventRepository::is_event_processed(
-            &pool,
-            &event.transaction_hash,
-            event.log_index,
-        )
-        .await
-        .unwrap();
+        let is_processed =
+            EventRepository::is_event_processed(&pool, &event.transaction_hash, event.log_index)
+                .await
+                .unwrap();
         assert!(!is_processed);
 
         // Mark event as processed
         let processed = EventRepository::mark_event_processed(&pool, event.clone())
             .await
             .unwrap();
-        
+
         assert_eq!(processed.transaction_hash, event.transaction_hash);
         assert_eq!(processed.log_index, event.log_index);
 
         // Check that event is now marked as processed
-        let is_processed = EventRepository::is_event_processed(
-            &pool,
-            &event.transaction_hash,
-            event.log_index,
-        )
-        .await
-        .unwrap();
+        let is_processed =
+            EventRepository::is_event_processed(&pool, &event.transaction_hash, event.log_index)
+                .await
+                .unwrap();
         assert!(is_processed);
 
         // Try to mark the same event again (should not error due to ON CONFLICT)
-        let result = EventRepository::mark_event_processed(&pool, event)
-            .await;
+        let result = EventRepository::mark_event_processed(&pool, event).await;
         assert!(result.is_ok());
     }
 }

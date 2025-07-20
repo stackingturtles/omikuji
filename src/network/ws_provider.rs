@@ -29,7 +29,7 @@ impl WsProviderManager {
         let mut backoff = ExponentialBackoff::default();
         backoff.max_elapsed_time = None; // Keep retrying indefinitely
         backoff.max_interval = Duration::from_secs(60); // Max 1 minute between retries
-        
+
         Self {
             url: ws_url,
             provider: Arc::new(RwLock::new(None)),
@@ -40,12 +40,12 @@ impl WsProviderManager {
     /// Connect to the WebSocket endpoint
     pub async fn connect(&self) -> Result<()> {
         info!("Connecting to WebSocket endpoint: {}", self.url);
-        
+
         let provider = self.create_provider().await?;
-        
+
         let mut guard = self.provider.write().await;
         *guard = Some(Arc::new(provider));
-        
+
         info!("Successfully connected to WebSocket endpoint");
         Ok(())
     }
@@ -53,7 +53,7 @@ impl WsProviderManager {
     /// Get the current provider, connecting if necessary
     pub async fn get_provider(&self) -> Result<Arc<WsProvider>> {
         let guard = self.provider.read().await;
-        
+
         if let Some(provider) = guard.as_ref() {
             // Check if the connection is still alive
             match provider.get_chain_id().await {
@@ -66,10 +66,10 @@ impl WsProviderManager {
         } else {
             drop(guard); // Release read lock before connecting
         }
-        
+
         // Need to connect or reconnect
         self.reconnect().await?;
-        
+
         // Now get the provider again
         let guard = self.provider.read().await;
         guard
@@ -81,7 +81,7 @@ impl WsProviderManager {
     /// Reconnect with exponential backoff
     async fn reconnect(&self) -> Result<()> {
         warn!("Attempting to reconnect to WebSocket endpoint");
-        
+
         let mut backoff = self.reconnect_backoff.clone();
         loop {
             match self.connect().await {
@@ -91,7 +91,7 @@ impl WsProviderManager {
                 }
                 Err(e) => {
                     error!("Failed to connect to WebSocket: {}", e);
-                    
+
                     match backoff.next_backoff() {
                         Some(duration) => {
                             warn!("Retrying connection in {:?}", duration);
@@ -110,15 +110,15 @@ impl WsProviderManager {
     async fn create_provider(&self) -> Result<WsProvider> {
         let url = Url::parse(&self.url)
             .with_context(|| format!("Invalid WebSocket URL: {}", self.url))?;
-        
+
         debug!("Creating WebSocket connection to: {}", url);
-        
+
         let ws_connect = WsConnect::new(url);
         let provider = ProviderBuilder::new()
             .on_ws(ws_connect)
             .await
             .with_context(|| "Failed to create WebSocket provider")?;
-        
+
         Ok(provider)
     }
 
@@ -146,7 +146,7 @@ impl WsConnectionPool {
     /// Get or create a WebSocket provider for a given URL
     pub async fn get_provider(&self, network_name: &str, ws_url: &str) -> Result<Arc<WsProvider>> {
         let key = format!("{}-{}", network_name, ws_url);
-        
+
         // Check if we already have a manager for this URL
         {
             let guard = self.connections.read().await;
@@ -154,17 +154,17 @@ impl WsConnectionPool {
                 return manager.get_provider().await;
             }
         }
-        
+
         // Create a new manager
         let manager = Arc::new(WsProviderManager::new(ws_url.to_string()));
         manager.connect().await?;
-        
+
         // Store it in the pool
         {
             let mut guard = self.connections.write().await;
             guard.insert(key.clone(), manager.clone());
         }
-        
+
         manager.get_provider().await
     }
 

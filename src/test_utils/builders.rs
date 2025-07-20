@@ -1,7 +1,9 @@
 //! Test data builders for creating common test objects
 
 use crate::config::metrics_config::MetricsConfig;
-use crate::config::models::{DatabaseCleanupConfig, GasConfig, Network, NetworkNode, OmikujiConfig};
+use crate::config::models::{
+    DatabaseCleanupConfig, GasConfig, Network, NetworkNode, OmikujiConfig,
+};
 use crate::gas_price::models::GasPriceFeedConfig;
 
 /// Builder for creating test Network configurations
@@ -163,6 +165,7 @@ impl ConfigBuilder {
             gas_price_feeds: self.gas_price_feeds,
             scheduled_tasks: self.scheduled_tasks,
             event_monitors: vec![],
+            default_execution_limits: Default::default(),
         }
     }
 

@@ -208,10 +208,12 @@ impl ConfigMetrics {
         // Set network configs
         for network in &config.networks {
             // Use the first node's RPC URL for metrics
-            let rpc_url = network.nodes.first()
+            let rpc_url = network
+                .nodes
+                .first()
                 .map(|node| node.rpc_url.as_str())
                 .unwrap_or("");
-            
+
             Self::set_network_config(
                 &network.name,
                 rpc_url,
@@ -378,7 +380,9 @@ mod tests {
     #[test]
     fn test_startup_info_with_config() {
         use crate::config::metrics_config::MetricsConfig;
-        use crate::config::models::{Datafeed, KeyStorageConfig, Network, NetworkNode, OmikujiConfig};
+        use crate::config::models::{
+            Datafeed, KeyStorageConfig, Network, NetworkNode, OmikujiConfig,
+        };
         use crate::gas_price::models::GasPriceFeedConfig;
 
         let config = OmikujiConfig {
@@ -424,6 +428,7 @@ mod tests {
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
             event_monitors: vec![],
+            default_execution_limits: Default::default(),
         };
 
         ConfigMetrics::record_startup_info(&config);

@@ -333,6 +333,7 @@ mod tests {
                 gas_price_feeds: Default::default(),
                 scheduled_tasks: vec![],
                 event_monitors: vec![],
+                default_execution_limits: Default::default(),
             }
         }
 
@@ -527,6 +528,7 @@ mod tests {
                 gas_price_feeds: Default::default(),
                 scheduled_tasks: vec![],
                 event_monitors: vec![],
+                default_execution_limits: Default::default(),
             };
 
             // NetworkManager::new is async, so we can't test it in a sync test

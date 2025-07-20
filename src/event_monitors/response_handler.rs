@@ -1,27 +1,24 @@
 //! Response handling framework for webhook responses
 
-use super::abi_decoder::AbiDecoder;
 use super::error::{EventMonitorError, Result};
 use super::listener::{EventContext, ProcessedEvent};
 use super::metrics::EventMonitorMetricsContext;
 use super::models::{EventMonitor, ResponseType};
-use super::webhook_caller::{ContractCall, WebhookResponse};
-use crate::gas::transaction_builder::GasAwareTransactionBuilder;
-use crate::metrics::{MetricsContext, TimedOperationRecorder, TransactionMetricsRecorder};
-use crate::network::{EthProvider, NetworkManager};
-use crate::utils::{TransactionContext, TransactionLogger};
-use alloy::primitives::{Address, U256};
-use alloy::providers::Provider;
+use super::transaction_executor::TransactionExecutor;
+use super::webhook_caller::WebhookResponse;
+use crate::config::models::OmikujiConfig;
+use crate::network::NetworkManager;
+use alloy::primitives::U256;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Handles webhook responses based on configured response type
 pub struct ResponseHandler {
     handlers: HashMap<ResponseType, Arc<dyn Handler>>,
     _network_manager: Arc<NetworkManager>,
+    _config: Arc<OmikujiConfig>,
 }
 
 /// Trait for response handlers
@@ -42,7 +39,8 @@ pub struct LogOnlyHandler;
 
 /// Handler for contract calls
 pub struct ContractCallHandler {
-    network_manager: Arc<NetworkManager>,
+    executor: Arc<TransactionExecutor>,
+    config: Arc<OmikujiConfig>,
 }
 
 /// Handler for database storage (placeholder for Phase 4)
@@ -55,14 +53,16 @@ pub struct MultiActionHandler {
 
 impl ResponseHandler {
     /// Create a new response handler with default handlers
-    pub fn new(network_manager: Arc<NetworkManager>) -> Self {
+    pub fn new(network_manager: Arc<NetworkManager>, config: Arc<OmikujiConfig>) -> Self {
         let mut handlers: HashMap<ResponseType, Arc<dyn Handler>> = HashMap::new();
 
         handlers.insert(ResponseType::LogOnly, Arc::new(LogOnlyHandler));
+        let executor = Arc::new(TransactionExecutor::new(network_manager.clone()));
         handlers.insert(
             ResponseType::ContractCall,
             Arc::new(ContractCallHandler {
-                network_manager: network_manager.clone(),
+                executor,
+                config: config.clone(),
             }),
         );
         handlers.insert(ResponseType::StoreDb, Arc::new(StoreDbHandler));
@@ -76,6 +76,7 @@ impl ResponseHandler {
         Self {
             handlers,
             _network_manager: network_manager,
+            _config: config,
         }
     }
 
@@ -185,230 +186,71 @@ impl Handler for ContractCallHandler {
             event.block_number
         );
 
-        // Get provider and network config
-        let provider = self
-            .network_manager
-            .get_provider(&context.network)
-            .map_err(|e| EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: format!("Failed to get provider: {e}"),
-            })?;
+        // Get execution limits
+        let execution_limits = monitor
+            .execution_limits
+            .as_ref()
+            .unwrap_or(&self.config.default_execution_limits);
 
-        let network_config = self
-            .network_manager
-            .get_network(&context.network)
-            .await
-            .map_err(|e| EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: format!("Failed to get network config: {e}"),
-            })?;
-
-        // Get contract call config
-        let call_config = monitor.response.contract_call.as_ref().ok_or_else(|| {
-            EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: "Missing contract call configuration".to_string(),
-            }
-        })?;
-
-        // Execute each call
+        // Execute each call sequentially
         for (i, call) in calls.iter().enumerate() {
-            self.execute_contract_call(
-                monitor,
-                call,
-                i,
-                calls.len(),
-                &provider,
-                network_config,
-                call_config,
-                event,
-                context,
-            )
-            .await?;
-        }
-
-        Ok(())
-    }
-}
-
-impl ContractCallHandler {
-    /// Execute a single contract call
-    #[allow(clippy::too_many_arguments)]
-    async fn execute_contract_call(
-        &self,
-        monitor: &EventMonitor,
-        call: &ContractCall,
-        index: usize,
-        total: usize,
-        provider: &Arc<EthProvider>,
-        network_config: &crate::config::models::Network,
-        call_config: &crate::event_monitors::models::ContractCallConfig,
-        event: &ProcessedEvent,
-        context: &EventContext,
-    ) -> Result<()> {
-        info!(
-            "Executing contract call {}/{} for monitor '{}': {} on {}",
-            index + 1,
-            total,
-            monitor.name,
-            call.function,
-            call.target
-        );
-
-        // Create metrics context
-        let metrics_ctx = MetricsContext::new(&monitor.name, &context.network);
-
-        // Parse target address
-        let target_address =
-            call.target
-                .parse::<Address>()
-                .map_err(|e| EventMonitorError::HandlerError {
-                    monitor: monitor.name.clone(),
-                    reason: format!("Invalid target address '{}': {}", call.target, e),
-                })?;
-
-        // Encode function call
-        let call_data =
-            AbiDecoder::encode_function_call(&call.function, &call.params, &monitor.name)?;
-
-        // Parse value if provided
-        let value = if call.value.is_empty() || call.value == "0" {
-            U256::ZERO
-        } else {
-            U256::from_str_radix(&call.value, 10).map_err(|e| EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: format!("Invalid value '{}': {}", call.value, e),
-            })?
-        };
-
-        // Record the attempt
-        let recorder = TimedOperationRecorder::contract_write(metrics_ctx.clone());
-
-        // Create transaction context
-        let _tx_context = TransactionContext::EventMonitor {
-            monitor_name: monitor.name.clone(),
-            event_name: event.event_name.clone(),
-            function_name: call.function.clone(),
-        };
-
-        // Log submission
-        let value_str = if value.is_zero() {
-            None
-        } else {
-            Some(value.to_string())
-        };
-        TransactionLogger::log_submission(
-            "event_monitor",
-            &monitor.name,
-            &context.network,
-            value_str.as_deref(),
-        );
-
-        // Build transaction with gas configuration
-        let start_time = Instant::now();
-        let tx_builder = GasAwareTransactionBuilder::new(
-            provider.clone(),
-            target_address,
-            call_data.clone(),
-            network_config.clone(),
-        )
-        .with_value(value);
-
-        // Apply gas limit override from config
-        let tx_builder = if call_config.gas_limit_multiplier > 0.0 {
-            // We'll apply the multiplier after estimation, for now just use builder as-is
-            tx_builder
-        } else {
-            tx_builder
-        };
-
-        // Check gas price against configured maximum
-        if call_config.max_gas_price_gwei > 0 {
-            let current_gas_price =
-                provider
-                    .get_gas_price()
-                    .await
-                    .map_err(|e| EventMonitorError::HandlerError {
-                        monitor: monitor.name.clone(),
-                        reason: format!("Failed to get gas price: {e}"),
-                    })?;
-
-            let max_gas_price_wei =
-                crate::gas::utils::gwei_to_wei(call_config.max_gas_price_gwei as f64);
-            if U256::from(current_gas_price) > max_gas_price_wei {
-                return Err(EventMonitorError::HandlerError {
-                    monitor: monitor.name.clone(),
-                    reason: format!(
-                        "Gas price {} gwei exceeds maximum {} gwei",
-                        crate::gas::utils::wei_to_gwei(U256::from(current_gas_price)),
-                        call_config.max_gas_price_gwei
-                    ),
-                });
-            }
-        }
-
-        // Build and send transaction
-        let tx_request = tx_builder
-            .build()
-            .await
-            .map_err(|e| EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: format!("Failed to build transaction: {e}"),
-            })?;
-
-        let pending_tx = provider.send_transaction(tx_request).await.map_err(|e| {
-            EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: format!("Failed to send transaction: {e}"),
-            }
-        })?;
-
-        let tx_hash = *pending_tx.tx_hash();
-        info!(
-            "Transaction submitted for monitor '{}': 0x{}",
-            monitor.name,
-            hex::encode(tx_hash)
-        );
-
-        // Wait for confirmation
-        let receipt =
-            pending_tx
-                .get_receipt()
-                .await
-                .map_err(|e| EventMonitorError::HandlerError {
-                    monitor: monitor.name.clone(),
-                    reason: format!("Failed to get transaction receipt: {e}"),
-                })?;
-
-        // Record metrics
-        let submission_time = start_time.elapsed();
-        let tx_recorder =
-            TransactionMetricsRecorder::new(metrics_ctx.clone(), &network_config.transaction_type);
-
-        if receipt.status() {
-            let gas_used = receipt.gas_used;
-            // TODO: Get actual gas limit from transaction
-            tx_recorder.record_success(
-                &receipt,
-                U256::from(gas_used),
-                Some(submission_time.as_secs()),
-            );
-            TransactionLogger::log_confirmation(tx_hash, gas_used);
-            recorder.record_success(None);
-
             info!(
-                "Contract call successful for monitor '{}': {} (gas used: {})",
-                monitor.name, call.function, gas_used
+                "Executing contract call {}/{} for monitor '{}': {} on {}",
+                i + 1,
+                calls.len(),
+                monitor.name,
+                call.function,
+                call.target
             );
-        } else {
-            // TODO: Get actual gas limit and price from transaction
-            tx_recorder.record_failure(U256::from(300000), None, "execution_reverted");
-            recorder.record_failure("Transaction reverted");
 
-            return Err(EventMonitorError::HandlerError {
-                monitor: monitor.name.clone(),
-                reason: format!("Transaction reverted: 0x{}", hex::encode(tx_hash)),
-            });
+            match self
+                .executor
+                .execute_call(call, event, context, monitor, execution_limits)
+                .await
+            {
+                Ok(receipt) => {
+                    info!(
+                        "Contract call successful for monitor '{}': {} (gas used: {})",
+                        monitor.name, call.function, receipt.gas_used
+                    );
+
+                    // Record metrics
+                    let metrics_ctx = EventMonitorMetricsContext::new(
+                        monitor.name.clone(),
+                        context.network.clone(),
+                    );
+                    metrics_ctx.contract_execution(true);
+                    metrics_ctx.contract_execution_gas(receipt.gas_used);
+                    // Parse value from call for metrics
+                    if let Ok(value) = U256::from_str_radix(&call.value, 10) {
+                        metrics_ctx.contract_execution_value(value.to::<u128>());
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to execute contract call: {}", e);
+
+                    // Record failure metrics
+                    let metrics_ctx = EventMonitorMetricsContext::new(
+                        monitor.name.clone(),
+                        context.network.clone(),
+                    );
+                    metrics_ctx.contract_execution(false);
+
+                    // Record validation failure if applicable
+                    let error_str = e.to_string();
+                    if error_str.contains("Contract address mismatch") {
+                        metrics_ctx.validation_failure("different_contract");
+                    } else if error_str.contains("exceeds maximum") {
+                        if error_str.contains("Value") {
+                            metrics_ctx.validation_failure("value_exceeded");
+                        } else if error_str.contains("Gas price") {
+                            metrics_ctx.validation_failure("gas_price_exceeded");
+                        }
+                    }
+
+                    return Err(e);
+                }
+            }
         }
 
         Ok(())
@@ -468,7 +310,9 @@ impl Handler for MultiActionHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::models::ExecutionLimits;
     use crate::event_monitors::models::{ResponseConfig, WebhookConfig};
+    use crate::event_monitors::transaction_executor::TransactionExecutor;
     use crate::event_monitors::webhook_caller::ContractCall;
     use crate::network::NetworkManager;
     use alloy::primitives::address;
@@ -477,6 +321,20 @@ mod tests {
     async fn create_test_network_manager() -> Arc<NetworkManager> {
         let networks = vec![];
         Arc::new(NetworkManager::new(&networks).await.unwrap())
+    }
+
+    fn create_test_config() -> Arc<OmikujiConfig> {
+        Arc::new(OmikujiConfig {
+            networks: vec![],
+            datafeeds: vec![],
+            database_cleanup: Default::default(),
+            key_storage: Default::default(),
+            metrics: Default::default(),
+            gas_price_feeds: Default::default(),
+            scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: ExecutionLimits::default(),
+        })
     }
 
     fn test_monitor(response_type: ResponseType) -> EventMonitor {
@@ -498,6 +356,7 @@ mod tests {
                 contract_call: None,
                 validation: None,
             },
+            execution_limits: None,
         }
     }
 
@@ -536,7 +395,8 @@ mod tests {
     #[tokio::test]
     async fn test_log_only_handler() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::LogOnly);
         let response = test_response();
         let event = test_event();
@@ -551,7 +411,8 @@ mod tests {
     #[tokio::test]
     async fn test_handler_registration() {
         let network_manager = create_test_network_manager().await;
-        let mut handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let mut handler = ResponseHandler::new(network_manager, config);
 
         // Verify default handlers exist
         assert_eq!(handler.handlers.len(), 4);
@@ -583,7 +444,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_response_with_unknown_type() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::LogOnly);
         let response = test_response();
         let event = test_event();
@@ -606,7 +468,8 @@ mod tests {
     #[tokio::test]
     async fn test_store_db_handler() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::StoreDb);
         let response = test_response();
         let event = test_event();
@@ -622,7 +485,8 @@ mod tests {
     #[tokio::test]
     async fn test_multi_action_handler() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::MultiAction);
         let response = test_response();
         let event = test_event();
@@ -638,7 +502,8 @@ mod tests {
     #[tokio::test]
     async fn test_contract_call_handler_wrong_action() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::ContractCall);
         let mut response = test_response();
         response.action = "wrong_action".to_string();
@@ -655,7 +520,8 @@ mod tests {
     #[tokio::test]
     async fn test_contract_call_handler_no_calls() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::ContractCall);
         let mut response = test_response();
         response.action = "contract_call".to_string();
@@ -677,7 +543,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_response_metrics() {
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
         let monitor = test_monitor(ResponseType::LogOnly);
         let response = test_response();
         let event = test_event();
@@ -711,10 +578,149 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_same_contract_validation() {
+        // Test that contract calls are only allowed to the same contract that emitted the event
+        let networks = vec![crate::config::models::Network {
+            name: "ethereum-mainnet".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
+            transaction_type: "legacy".to_string(),
+            gas_config: crate::config::models::GasConfig::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
+        }];
+        let network_manager = Arc::new(NetworkManager::new(&networks).await.unwrap());
+        let _config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager.clone()));
+
+        let mut monitor = test_monitor(ResponseType::ContractCall);
+        monitor.execution_limits = Some(ExecutionLimits {
+            max_value_wei: "1000000000000000000".to_string(), // 1 ETH
+            max_gas_price_gwei: 100,
+        });
+
+        let mut event = test_event();
+        event.contract_address = address!("1234567890123456789012345678901234567890");
+
+        let context = test_context();
+
+        // Test 1: Same contract - should succeed (would fail at network level but pass validation)
+        let mut call = test_contract_call();
+        call.target = "0x1234567890123456789012345678901234567890".to_string();
+
+        // This will fail due to no network, but should pass contract validation
+        let result = executor
+            .execute_call(
+                &call,
+                &event,
+                &context,
+                &monitor,
+                &monitor.execution_limits.as_ref().unwrap(),
+            )
+            .await;
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        // Should fail on network/provider, not contract mismatch
+        assert!(!err_msg.contains("Contract address mismatch"));
+
+        // Test 2: Different contract - should fail with contract mismatch error
+        call.target = "0x9999999999999999999999999999999999999999".to_string();
+
+        let result = executor
+            .execute_call(
+                &call,
+                &event,
+                &context,
+                &monitor,
+                &monitor.execution_limits.as_ref().unwrap(),
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Contract address mismatch"));
+    }
+
+    #[tokio::test]
+    async fn test_value_limit_validation() {
+        // Test that value limits are enforced
+        let networks = vec![crate::config::models::Network {
+            name: "ethereum-mainnet".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
+            transaction_type: "legacy".to_string(),
+            gas_config: crate::config::models::GasConfig::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
+        }];
+        let network_manager = Arc::new(NetworkManager::new(&networks).await.unwrap());
+        let _config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager.clone()));
+
+        let mut monitor = test_monitor(ResponseType::ContractCall);
+        monitor.execution_limits = Some(ExecutionLimits {
+            max_value_wei: "1000000000000000000".to_string(), // 1 ETH
+            max_gas_price_gwei: 100,
+        });
+
+        let event = test_event();
+        let context = test_context();
+
+        // Test 1: Value within limit
+        let mut call = test_contract_call();
+        call.value = "500000000000000000".to_string(); // 0.5 ETH
+
+        let result = executor
+            .execute_call(
+                &call,
+                &event,
+                &context,
+                &monitor,
+                &monitor.execution_limits.as_ref().unwrap(),
+            )
+            .await;
+        // Will fail on network but not on value validation
+        assert!(result.is_err());
+        assert!(!result.unwrap_err().to_string().contains("exceeds maximum"));
+
+        // Test 2: Value exceeds limit
+        call.value = "2000000000000000000".to_string(); // 2 ETH
+
+        let result = executor
+            .execute_call(
+                &call,
+                &event,
+                &context,
+                &monitor,
+                &monitor.execution_limits.as_ref().unwrap(),
+            )
+            .await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("exceeds maximum"),
+            "Expected 'exceeds maximum' but got: {}",
+            error_msg
+        );
+    }
+
+    #[tokio::test]
     async fn test_handle_response_debug_logging() {
         // This test covers lines 95-100: debug logging match statement
         let network_manager = create_test_network_manager().await;
-        let handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let handler = ResponseHandler::new(network_manager, config);
 
         // Test all response types to cover all match arms
         let response_types = vec![
@@ -755,8 +761,11 @@ mod tests {
     async fn test_contract_call_handler_wrong_action_warning() {
         // This test specifically covers line 167: warning log for wrong action
         let network_manager = create_test_network_manager().await;
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
         let monitor = test_monitor(ResponseType::ContractCall);
         let mut response = test_response();
@@ -773,8 +782,11 @@ mod tests {
     async fn test_contract_call_handler_with_calls() {
         // This test covers lines 180-230: main execution flow
         let network_manager = create_test_network_manager().await;
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
 
         // Create monitor with contract call config
@@ -802,13 +814,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_contract_call_handler_missing_config() {
-        // Test missing contract call configuration
-        // Create monitor without contract call config
+    async fn test_contract_call_handler_missing_calls() {
+        // Test missing contract calls in response
         let monitor = test_monitor(ResponseType::ContractCall);
         let mut response = test_response();
         response.action = "contract_call".to_string();
-        response.calls = Some(vec![test_contract_call()]);
+        response.calls = None; // No calls provided
         let event = test_event();
         let context = test_context();
 
@@ -828,24 +839,36 @@ mod tests {
             ws_url: None,
         }];
         let network_manager = Arc::new(NetworkManager::new(&networks).await.unwrap());
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager.clone()));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
 
         let result = handler.handle(&monitor, response, &event, &context).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Missing contract call configuration"));
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("No contract calls provided in response"),
+            "Expected error about missing calls but got: {}",
+            error_msg
+        );
     }
 
+    /* Tests for execute_contract_call have been removed as this functionality
+       is now handled by TransactionExecutor::execute_call
+
     #[tokio::test]
+    #[ignore]
     async fn test_execute_contract_call_invalid_address() {
         // Test execute_contract_call with invalid target address
         let network_manager = create_test_network_manager().await;
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
 
         let monitor = test_monitor(ResponseType::ContractCall);
@@ -905,11 +928,15 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_execute_contract_call_invalid_value() {
         // Test execute_contract_call with invalid value
         let network_manager = create_test_network_manager().await;
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
 
         let monitor = test_monitor(ResponseType::ContractCall);
@@ -964,11 +991,15 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_execute_contract_call_with_value() {
         // Test execute_contract_call with a non-zero value
         let network_manager = create_test_network_manager().await;
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
 
         let monitor = test_monitor(ResponseType::ContractCall);
@@ -1020,7 +1051,7 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-    }
+    } */
 
     #[tokio::test]
     async fn test_store_db_handler_full_coverage() {
@@ -1135,7 +1166,8 @@ mod tests {
     async fn test_handle_response_metrics_failure() {
         // Test metrics recording on failure
         let network_manager = create_test_network_manager().await;
-        let mut handler = ResponseHandler::new(network_manager);
+        let config = create_test_config();
+        let mut handler = ResponseHandler::new(network_manager, config);
 
         // Create a handler that always fails
         struct AlwaysFailHandler;
@@ -1172,8 +1204,11 @@ mod tests {
     async fn test_contract_call_handler_multiple_calls() {
         // Test handling multiple contract calls
         let network_manager = create_test_network_manager().await;
+        let config = create_test_config();
+        let executor = Arc::new(TransactionExecutor::new(network_manager));
         let handler = ContractCallHandler {
-            network_manager: network_manager.clone(),
+            executor,
+            config: config.clone(),
         };
 
         let mut monitor = test_monitor(ResponseType::ContractCall);

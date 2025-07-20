@@ -4,6 +4,8 @@ use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::config::models::ExecutionLimits;
+
 /// Configuration for monitoring blockchain events
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EventMonitor {
@@ -25,6 +27,10 @@ pub struct EventMonitor {
     /// Response handling configuration
     #[serde(default)]
     pub response: ResponseConfig,
+
+    /// Execution limits for contract calls (optional, will use defaults if not specified)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_limits: Option<ExecutionLimits>,
 }
 
 /// HTTP method for webhook calls
@@ -308,6 +314,7 @@ mod tests {
                 retry_delay_seconds: 5,
             },
             response: ResponseConfig::default(),
+            execution_limits: None,
         }
     }
 

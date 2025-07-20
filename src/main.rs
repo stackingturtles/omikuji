@@ -76,7 +76,9 @@ async fn main() -> Result<()> {
     );
 
     for network in &config.networks {
-        let rpc_url = network.nodes.first()
+        let rpc_url = network
+            .nodes
+            .first()
             .map(|node| node.rpc_url.as_str())
             .unwrap_or("no nodes configured");
         info!("Network: {} ({})", network.name, rpc_url);
@@ -449,13 +451,17 @@ async fn main() -> Result<()> {
                 "Event monitor '{}': network='{}', contract='{}', event='{}'",
                 monitor.name, monitor.network, monitor.contract_address, monitor.event_signature
             );
-            debug!("  Webhook: {:?} {}", monitor.webhook.method, monitor.webhook.url);
+            debug!(
+                "  Webhook: {:?} {}",
+                monitor.webhook.method, monitor.webhook.url
+            );
         }
 
         // Create event monitoring components
         let webhook_caller = Arc::new(omikuji::event_monitors::WebhookCaller::new());
         let response_handler = Arc::new(omikuji::event_monitors::ResponseHandler::new(
             Arc::clone(&network_manager),
+            Arc::new(config.clone()),
         ));
 
         // Create event listener with all configured monitors
@@ -598,6 +604,7 @@ mod tests {
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
             event_monitors: vec![],
+            default_execution_limits: Default::default(),
         }
     }
 

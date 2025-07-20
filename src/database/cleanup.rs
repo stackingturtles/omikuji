@@ -195,6 +195,7 @@ mod tests {
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
             event_monitors: vec![],
+            default_execution_limits: Default::default(),
         }
     }
 

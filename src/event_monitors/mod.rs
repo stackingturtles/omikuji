@@ -12,6 +12,7 @@ pub mod listener;
 pub mod metrics;
 pub mod models;
 pub mod response_handler;
+pub mod transaction_executor;
 pub mod webhook_caller;
 
 pub use builder::*;
@@ -20,4 +21,5 @@ pub use error::*;
 pub use listener::*;
 pub use models::*;
 pub use response_handler::*;
+pub use transaction_executor::*;
 pub use webhook_caller::*;

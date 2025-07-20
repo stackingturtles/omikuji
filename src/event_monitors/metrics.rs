@@ -63,6 +63,36 @@ lazy_static! {
         "Total number of event processing errors",
         &[MONITOR_LABEL, ERROR_TYPE_LABEL]
     ).expect("Failed to create processing_errors metric");
+
+    /// Contract executions
+    static ref CONTRACT_EXECUTIONS: CounterVec = register_counter_vec!(
+        "omikuji_contract_executions_total",
+        "Total number of contract executions from webhook responses",
+        &[MONITOR_LABEL, STATUS_LABEL]
+    ).expect("Failed to create contract_executions metric");
+
+    /// Contract execution gas used
+    static ref CONTRACT_EXECUTION_GAS_USED: HistogramVec = register_histogram_vec!(
+        "omikuji_contract_execution_gas_used",
+        "Gas used for contract executions",
+        &[MONITOR_LABEL],
+        vec![50_000.0, 100_000.0, 200_000.0, 300_000.0, 500_000.0, 1_000_000.0]
+    ).expect("Failed to create contract_execution_gas_used metric");
+
+    /// Contract execution value in wei
+    static ref CONTRACT_EXECUTION_VALUE: HistogramVec = register_histogram_vec!(
+        "omikuji_contract_execution_value_wei",
+        "Value sent with contract executions in wei",
+        &[MONITOR_LABEL],
+        vec![0.0, 1e15, 1e16, 1e17, 1e18, 1e19] // 0, 0.001, 0.01, 0.1, 1, 10 ETH
+    ).expect("Failed to create contract_execution_value metric");
+
+    /// Validation failures
+    static ref VALIDATION_FAILURES: CounterVec = register_counter_vec!(
+        "omikuji_execution_validation_failures_total",
+        "Total number of execution validation failures",
+        &[MONITOR_LABEL, "reason"]
+    ).expect("Failed to create validation_failures metric");
 }
 
 /// Event monitor metrics
@@ -127,6 +157,35 @@ impl EventMonitorMetrics {
             .with_label_values(&[monitor, error_type])
             .inc();
     }
+
+    /// Record contract execution
+    pub fn record_contract_execution(&self, monitor: &str, success: bool) {
+        let status = if success { "success" } else { "failure" };
+        CONTRACT_EXECUTIONS
+            .with_label_values(&[monitor, status])
+            .inc();
+    }
+
+    /// Record contract execution gas used
+    pub fn record_contract_execution_gas(&self, monitor: &str, gas_used: u128) {
+        CONTRACT_EXECUTION_GAS_USED
+            .with_label_values(&[monitor])
+            .observe(gas_used as f64);
+    }
+
+    /// Record contract execution value
+    pub fn record_contract_execution_value(&self, monitor: &str, value_wei: u128) {
+        CONTRACT_EXECUTION_VALUE
+            .with_label_values(&[monitor])
+            .observe(value_wei as f64);
+    }
+
+    /// Record validation failure
+    pub fn record_validation_failure(&self, monitor: &str, reason: &str) {
+        VALIDATION_FAILURES
+            .with_label_values(&[monitor, reason])
+            .inc();
+    }
 }
 
 /// Metrics context for event monitoring
@@ -180,6 +239,30 @@ impl EventMonitorMetricsContext {
     pub fn processing_error(&self, error_type: &str) {
         self.metrics
             .record_processing_error(&self.monitor_name, error_type);
+    }
+
+    /// Record contract execution
+    pub fn contract_execution(&self, success: bool) {
+        self.metrics
+            .record_contract_execution(&self.monitor_name, success);
+    }
+
+    /// Record contract execution gas used
+    pub fn contract_execution_gas(&self, gas_used: u128) {
+        self.metrics
+            .record_contract_execution_gas(&self.monitor_name, gas_used);
+    }
+
+    /// Record contract execution value
+    pub fn contract_execution_value(&self, value_wei: u128) {
+        self.metrics
+            .record_contract_execution_value(&self.monitor_name, value_wei);
+    }
+
+    /// Record validation failure
+    pub fn validation_failure(&self, reason: &str) {
+        self.metrics
+            .record_validation_failure(&self.monitor_name, reason);
     }
 }
 

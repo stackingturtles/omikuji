@@ -215,6 +215,7 @@ impl EventMonitorBuilder {
             event_signature,
             webhook,
             response,
+            execution_limits: None,
         };
 
         // Validate the built monitor

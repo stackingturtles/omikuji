@@ -159,9 +159,111 @@ Enable debug logging to see detailed WebSocket activity:
 RUST_LOG=omikuji::event_monitors=debug,omikuji::network=debug omikuji -c config.yaml
 ```
 
+## Contract Execution from Webhook Responses
+
+Event monitors can now execute smart contract calls based on webhook responses. This enables automated on-chain actions triggered by off-chain logic.
+
+### Configuration
+
+Configure contract execution with response type and execution limits:
+
+```yaml
+event_monitors:
+  - name: automated_responder
+    network: ethereum
+    contract_address: "0x..."
+    event_signature: "RequestReceived(uint256 indexed id, address requester)"
+    webhook:
+      url: "https://your-api.com/process-request"
+      method: "POST"
+    response:
+      type: contract_call
+      contract_call:
+        target_contract: "{event.address}"  # Use the same contract that emitted the event
+        max_gas_price_gwei: 100
+        gas_limit_multiplier: 1.2
+        value_wei: 0
+    execution_limits:
+      max_value_wei: "1000000000000000000"  # 1 ETH max
+      max_gas_price_gwei: 150
+```
+
+### Webhook Response Format
+
+Your webhook should return a JSON response with contract calls:
+
+```json
+{
+  "action": "execute",
+  "calls": [
+    {
+      "target": "0x1234567890123456789012345678901234567890",
+      "function": "updateValue(uint256,address)",
+      "params": [42, "0x5678901234567890123456789012345678901234"],
+      "value": "0"
+    }
+  ],
+  "metadata": {
+    "reason": "Updating based on external data",
+    "timestamp": "2024-01-20T10:30:00Z"
+  }
+}
+```
+
+### Security Features
+
+1. **Same-Contract Restriction**: Webhook responses can only execute calls on the contract that emitted the event
+2. **Execution Limits**: Configure maximum ETH value and gas price limits
+3. **Gas Management**: Automatic gas estimation with configurable multiplier
+4. **Transaction Tracking**: All executions are logged in the database
+
+### Database Tracking
+
+Contract executions are tracked in a dedicated table:
+
+```sql
+CREATE TABLE contract_executions (
+    id SERIAL PRIMARY KEY,
+    monitor_name VARCHAR(255) NOT NULL,
+    network VARCHAR(255) NOT NULL,
+    transaction_hash VARCHAR(66) NOT NULL,
+    contract_address VARCHAR(42) NOT NULL,
+    function_selector VARCHAR(10) NOT NULL,
+    call_data TEXT NOT NULL,
+    value_wei VARCHAR(78) NOT NULL,
+    gas_limit BIGINT NOT NULL,
+    gas_price_wei VARCHAR(78) NOT NULL,
+    gas_used BIGINT,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    trigger_event_tx_hash VARCHAR(66) NOT NULL,
+    trigger_event_log_index INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### Metrics
+
+New metrics for monitoring contract executions:
+
+- `omikuji_contract_executions_total` - Total executions by status
+- `omikuji_contract_execution_gas_used` - Gas usage histogram
+- `omikuji_contract_execution_value_wei` - ETH value histogram
+- `omikuji_execution_validation_failures_total` - Validation failure reasons
+
+### Best Practices
+
+1. **Test Webhook Responses**: Ensure your webhook returns valid contract calls
+2. **Set Conservative Limits**: Start with low value and gas limits
+3. **Monitor Execution Status**: Track success/failure rates
+4. **Handle Failures Gracefully**: Webhook should handle cases where execution might fail
+
 ## Future Enhancements
 
 - Multi-node support with automatic failover
 - WebSocket connection pooling
 - Event replay capabilities
 - Advanced filtering options
+- Support for cross-contract calls (with additional security checks)
+- Batch transaction support

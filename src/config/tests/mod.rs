@@ -43,7 +43,10 @@ mod tests {
         assert_eq!(config.datafeeds.len(), 1);
 
         assert_eq!(config.networks[0].name, "ethereum");
-        assert_eq!(config.networks[0].nodes[0].rpc_url, "https://eth.llamarpc.com");
+        assert_eq!(
+            config.networks[0].nodes[0].rpc_url,
+            "https://eth.llamarpc.com"
+        );
 
         assert_eq!(config.datafeeds[0].name, "eth_usd");
         assert_eq!(config.datafeeds[0].networks, "ethereum");

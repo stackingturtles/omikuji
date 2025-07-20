@@ -76,7 +76,9 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
     .context("Failed to check if feed_log table exists")?;
 
     if !feed_log_exists.0 {
-        return Err(anyhow::anyhow!("Table 'feed_log' does not exist in schema 'omikuji'"));
+        return Err(anyhow::anyhow!(
+            "Table 'feed_log' does not exist in schema 'omikuji'"
+        ));
     }
 
     // Check transaction_log table
@@ -92,7 +94,9 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
     .context("Failed to check if transaction_log table exists")?;
 
     if !transaction_log_exists.0 {
-        return Err(anyhow::anyhow!("Table 'transaction_log' does not exist in schema 'omikuji'"));
+        return Err(anyhow::anyhow!(
+            "Table 'transaction_log' does not exist in schema 'omikuji'"
+        ));
     }
 
     // Check gas_token_prices table (replaces the old gas_price_log)
@@ -108,7 +112,9 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
     .context("Failed to check if gas_token_prices table exists")?;
 
     if !gas_token_prices_exists.0 {
-        return Err(anyhow::anyhow!("Table 'gas_token_prices' does not exist in schema 'omikuji'"));
+        return Err(anyhow::anyhow!(
+            "Table 'gas_token_prices' does not exist in schema 'omikuji'"
+        ));
     }
 
     // Test write access to feed_log table
@@ -262,7 +268,8 @@ mod tests {
     #[test]
     fn test_test_insert_query() {
         // Test the format of the test insert query
-        let query = "INSERT INTO omikuji.feed_log (feed_name, network_name, feed_value, feed_timestamp) 
+        let query =
+            "INSERT INTO omikuji.feed_log (feed_name, network_name, feed_value, feed_timestamp) 
          VALUES ($1, $2, $3, $4)";
 
         assert!(query.contains("INSERT INTO omikuji.feed_log"));

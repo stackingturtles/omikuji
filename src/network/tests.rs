@@ -159,7 +159,9 @@ mod tests {
         ];
 
         assert_eq!(networks.len(), 4);
-        assert!(networks.iter().all(|n| !n.nodes.is_empty() && !n.nodes[0].rpc_url.is_empty()));
+        assert!(networks
+            .iter()
+            .all(|n| !n.nodes.is_empty() && !n.nodes[0].rpc_url.is_empty()));
         assert!(networks.iter().all(|n| n.transaction_type == "eip1559"));
     }
 
