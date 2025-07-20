@@ -677,7 +677,8 @@ mod tests {
             .build();
 
         assert_eq!(network.name, "ethereum-mainnet");
-        assert_eq!(network.rpc_url, "https://eth-mainnet.alchemyapi.io/v2/test");
+        assert_eq!(network.nodes.len(), 1);
+        assert_eq!(network.nodes[0].rpc_url, "https://eth-mainnet.alchemyapi.io/v2/test");
         assert_eq!(network.gas_token, "ethereum");
         assert_eq!(network.gas_token_symbol, "ETH");
     }
@@ -698,7 +699,8 @@ mod tests {
 
         let localhost = NetworkBuilder::localhost(8545);
         assert_eq!(localhost.name, "localhost");
-        assert_eq!(localhost.rpc_url, "http://localhost:8545");
+        assert_eq!(localhost.nodes.len(), 1);
+        assert_eq!(localhost.nodes[0].rpc_url, "http://localhost:8545");
         assert_eq!(localhost.transaction_type, "legacy");
     }
 

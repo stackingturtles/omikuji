@@ -19,7 +19,7 @@ impl EventRepository {
         let exists = sqlx::query_scalar!(
             r#"
             SELECT EXISTS(
-                SELECT 1 FROM processed_events 
+                SELECT 1 FROM omikuji.processed_events 
                 WHERE transaction_hash = $1 AND log_index = $2
             ) as "exists!"
             "#,
@@ -40,7 +40,7 @@ impl EventRepository {
         let record = sqlx::query_as!(
             ProcessedEvent,
             r#"
-            INSERT INTO processed_events (
+            INSERT INTO omikuji.processed_events (
                 transaction_hash, log_index, contract_address, 
                 event_type, event_data
             )
@@ -52,7 +52,7 @@ impl EventRepository {
                 log_index,
                 contract_address,
                 event_type,
-                processed_at,
+                processed_at AT TIME ZONE 'UTC' as "processed_at!",
                 event_data
             "#,
             event.transaction_hash,
@@ -80,7 +80,7 @@ impl EventRepository {
         let record = sqlx::query_as!(
             ProcessedEvent,
             r#"
-            INSERT INTO processed_events (
+            INSERT INTO omikuji.processed_events (
                 transaction_hash, log_index, contract_address, 
                 event_type, event_data
             )
@@ -92,7 +92,7 @@ impl EventRepository {
                 log_index,
                 contract_address,
                 event_type,
-                processed_at,
+                processed_at AT TIME ZONE 'UTC' as "processed_at!",
                 event_data
             "#,
             event.transaction_hash,
@@ -124,9 +124,9 @@ impl EventRepository {
                 log_index,
                 contract_address,
                 event_type,
-                processed_at,
+                processed_at AT TIME ZONE 'UTC' as "processed_at!",
                 event_data
-            FROM processed_events
+            FROM omikuji.processed_events
             WHERE contract_address = $1
             ORDER BY processed_at DESC
             LIMIT $2
@@ -147,8 +147,8 @@ impl EventRepository {
     ) -> Result<i64> {
         let result = sqlx::query!(
             r#"
-            DELETE FROM processed_events
-            WHERE processed_at < NOW() - INTERVAL '1 day' * $1
+            DELETE FROM omikuji.processed_events
+            WHERE processed_at < NOW() - INTERVAL '1 day' * $1::int
             "#,
             retention_days
         )
@@ -176,7 +176,7 @@ impl EventRepository {
             SELECT 
                 event_type,
                 COUNT(*) as count
-            FROM processed_events
+            FROM omikuji.processed_events
             GROUP BY event_type
             ORDER BY count DESC
             "#
@@ -197,6 +197,7 @@ mod tests {
     use crate::test_utils::*;
 
     #[tokio::test]
+    #[ignore = "Requires database connection"]
     async fn test_event_processing_flow() {
         let pool = create_test_db_pool().await;
 

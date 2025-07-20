@@ -1,19 +1,24 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::config::models::Network;
+    use crate::config::models::{Network, NetworkNode};
     use std::env;
 
     // Helper function to create test network config
     fn create_test_network(name: &str, rpc_url: &str) -> Network {
         Network {
             name: name.to_string(),
-            rpc_url: rpc_url.to_string(),
-            ws_url: None,
+            nodes: vec![NetworkNode {
+                name: "Test Node".to_string(),
+                rpc_url: rpc_url.to_string(),
+                ws_url: None,
+            }],
             transaction_type: "eip1559".to_string(),
             gas_config: Default::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         }
     }
 
@@ -154,7 +159,7 @@ mod tests {
         ];
 
         assert_eq!(networks.len(), 4);
-        assert!(networks.iter().all(|n| !n.rpc_url.is_empty()));
+        assert!(networks.iter().all(|n| !n.nodes.is_empty() && !n.nodes[0].rpc_url.is_empty()));
         assert!(networks.iter().all(|n| n.transaction_type == "eip1559"));
     }
 
@@ -166,10 +171,10 @@ mod tests {
         let ws_network = create_test_network("websocket", "ws://localhost:8546");
         let wss_network = create_test_network("websocket-secure", "wss://eth-ws.llamarpc.com");
 
-        assert!(http_network.rpc_url.starts_with("http://"));
-        assert!(https_network.rpc_url.starts_with("https://"));
-        assert!(ws_network.rpc_url.starts_with("ws://"));
-        assert!(wss_network.rpc_url.starts_with("wss://"));
+        assert!(http_network.nodes[0].rpc_url.starts_with("http://"));
+        assert!(https_network.nodes[0].rpc_url.starts_with("https://"));
+        assert!(ws_network.nodes[0].rpc_url.starts_with("ws://"));
+        assert!(wss_network.nodes[0].rpc_url.starts_with("wss://"));
     }
 
     #[test]

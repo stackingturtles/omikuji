@@ -29,7 +29,7 @@ impl Repository<NewFeedLog> for FeedLogRepository {
 
         let record = sqlx::query_as::<_, FeedLog>(
             r#"
-            INSERT INTO feed_log (
+            INSERT INTO omikuji.feed_log (
                 feed_name, 
                 network_name, 
                 feed_value, 
@@ -82,7 +82,7 @@ impl Repository<NewFeedLog> for FeedLogRepository {
                 error_status_code,
                 network_error,
                 created_at
-            FROM feed_log
+            FROM omikuji.feed_log
             WHERE feed_name = $1
             ORDER BY created_at DESC
             LIMIT 1
@@ -106,7 +106,7 @@ impl Repository<NewFeedLog> for FeedLogRepository {
     async fn delete(&self, id: &str) -> Result<()> {
         let result = sqlx::query(
             r#"
-            DELETE FROM feed_log
+            DELETE FROM omikuji.feed_log
             WHERE feed_name = $1
             "#,
         )

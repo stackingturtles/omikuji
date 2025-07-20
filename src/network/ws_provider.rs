@@ -8,7 +8,7 @@ use alloy::{
     pubsub::PubSubFrontend,
 };
 use anyhow::{Context, Result};
-use backoff::ExponentialBackoff;
+use backoff::{backoff::Backoff, ExponentialBackoff};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use url::Url;

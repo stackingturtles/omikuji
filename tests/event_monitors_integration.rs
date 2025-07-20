@@ -10,8 +10,10 @@ fn test_event_monitor_config_parsing() {
     let yaml = r#"
 networks:
   - name: ethereum-mainnet
-    rpc_url: https://eth.llamarpc.com
-    ws_url: wss://eth.llamarpc.com
+    nodes:
+      - name: "Primary Node"
+        rpc_url: https://eth.llamarpc.com
+        ws_url: wss://eth.llamarpc.com
 
 datafeeds: []
 

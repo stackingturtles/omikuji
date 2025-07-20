@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod examples {
-    use crate::config::models::Network;
+    use crate::config::models::{Network, NetworkNode};
     use crate::test_utils::{assertions::*, builders::*, edge_cases::*, factories::*, mocks::*};
 
     /// Example: Before and after using test utilities
@@ -11,12 +11,17 @@ mod examples {
         // OLD WAY (without utilities) - lots of boilerplate
         let old_network = Network {
             name: "test".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
+            nodes: vec![NetworkNode {
+                name: "Test Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             transaction_type: "eip1559".to_string(),
             gas_config: Default::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         };
 
         // NEW WAY (with utilities) - clean and expressive
@@ -270,7 +275,7 @@ mod patterns {
         // Test interactions between components
         for network in &config.networks {
             config_assertions::assert_valid_network_name(&network.name);
-            config_assertions::assert_valid_url(&network.rpc_url);
+            config_assertions::assert_valid_url(&network.nodes[0].rpc_url);
         }
     }
 }

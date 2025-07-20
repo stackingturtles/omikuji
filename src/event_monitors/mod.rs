@@ -7,6 +7,7 @@ pub mod abi_decoder;
 pub mod builder;
 pub mod config;
 pub mod error;
+pub mod event_abi_decoder;
 pub mod listener;
 pub mod metrics;
 pub mod models;

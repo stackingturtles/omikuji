@@ -289,7 +289,7 @@ mod tests {
 
     mod contract_updater_tests {
         use super::*;
-        use crate::config::models::{Datafeed, Network, OmikujiConfig};
+        use crate::config::models::{Datafeed, Network, NetworkNode, OmikujiConfig};
         use crate::datafeed::contract_updater::ContractUpdater;
         use crate::network::NetworkManager;
         use alloy::primitives::I256;
@@ -298,12 +298,17 @@ mod tests {
             OmikujiConfig {
                 networks: vec![Network {
                     name: "test-network".to_string(),
-                    rpc_url: "http://localhost:8545".to_string(),
-                    ws_url: None,
+                    nodes: vec![NetworkNode {
+                        name: "Local Node".to_string(),
+                        rpc_url: "http://localhost:8545".to_string(),
+                        ws_url: None,
+                    }],
                     transaction_type: "eip1559".to_string(),
                     gas_config: Default::default(),
                     gas_token: "ethereum".to_string(),
                     gas_token_symbol: "ETH".to_string(),
+                    rpc_url: None,
+                    ws_url: None,
                 }],
                 datafeeds: vec![Datafeed {
                     name: "test-feed".to_string(),

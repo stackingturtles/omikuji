@@ -76,7 +76,10 @@ async fn main() -> Result<()> {
     );
 
     for network in &config.networks {
-        info!("Network: {} ({})", network.name, network.rpc_url);
+        let rpc_url = network.nodes.first()
+            .map(|node| node.rpc_url.as_str())
+            .unwrap_or("no nodes configured");
+        info!("Network: {} ({})", network.name, rpc_url);
     }
 
     for datafeed in &config.datafeeds {
@@ -243,7 +246,7 @@ async fn main() -> Result<()> {
                             }
                             Err(e) => {
                                 error!("Database tables are not accessible: {}", e);
-                                error!("Please ensure the required tables exist (feed_log, transaction_log, gas_price_log)");
+                                error!("Please ensure the required tables exist (feed_log, transaction_log, gas_token_prices)");
                                 error!("Continuing without database support");
                                 ConfigMetrics::set_database_status(false);
                                 None
@@ -559,7 +562,7 @@ mod tests {
     use config::metrics_config::MetricsConfig;
     use config::models::{
         AwsSecretsConfig, DatabaseCleanupConfig, GasConfig, KeyStorageConfig, KeyringConfig,
-        Network, OmikujiConfig, VaultConfig,
+        Network, NetworkNode, OmikujiConfig, VaultConfig,
     };
     use gas_price::models::GasPriceFeedConfig;
     use std::fs;
@@ -569,12 +572,17 @@ mod tests {
         OmikujiConfig {
             networks: vec![Network {
                 name: "test-network".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
-                ws_url: None,
+                nodes: vec![NetworkNode {
+                    name: "Local Node".to_string(),
+                    rpc_url: "http://localhost:8545".to_string(),
+                    ws_url: None,
+                }],
                 transaction_type: "eip1559".to_string(),
                 gas_config: GasConfig::default(),
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             }],
             datafeeds: vec![],
             database_cleanup: DatabaseCleanupConfig::default(),

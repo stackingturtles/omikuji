@@ -153,19 +153,24 @@ pub async fn run_manual_cleanup(
 mod tests {
     use super::*;
     use crate::config::metrics_config::MetricsConfig;
-    use crate::config::models::{Datafeed, Network};
+    use crate::config::models::{Datafeed, Network, NetworkNode};
     use crate::gas_price::models::GasPriceFeedConfig;
 
     fn create_test_config() -> OmikujiConfig {
         OmikujiConfig {
             networks: vec![Network {
                 name: "test-network".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
-                ws_url: None,
+                nodes: vec![NetworkNode {
+                    name: "Local Node".to_string(),
+                    rpc_url: "http://localhost:8545".to_string(),
+                    ws_url: None,
+                }],
                 transaction_type: "eip1559".to_string(),
                 gas_config: Default::default(),
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             }],
             datafeeds: vec![Datafeed {
                 name: "test-feed".to_string(),

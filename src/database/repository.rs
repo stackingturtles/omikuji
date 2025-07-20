@@ -25,7 +25,7 @@ impl FeedLogRepository {
 
         let record = sqlx::query_as::<_, FeedLog>(
             r#"
-            INSERT INTO feed_log (
+            INSERT INTO omikuji.feed_log (
                 feed_name, 
                 network_name, 
                 feed_value, 
@@ -77,7 +77,7 @@ impl FeedLogRepository {
 
         let result = sqlx::query(
             r#"
-            DELETE FROM feed_log
+            DELETE FROM omikuji.feed_log
             WHERE feed_name = $1 
                 AND network_name = $2
                 AND created_at < $3
@@ -111,7 +111,7 @@ mod tests {
     fn test_save_query_format() {
         // Test the SQL query format for saving feed logs
         let query = r#"
-            INSERT INTO feed_log (
+            INSERT INTO omikuji.feed_log (
                 feed_name, 
                 network_name, 
                 feed_value, 
@@ -133,7 +133,7 @@ mod tests {
                 created_at
             "#;
 
-        assert!(query.contains("INSERT INTO feed_log"));
+        assert!(query.contains("INSERT INTO omikuji.feed_log"));
         assert!(query.contains("RETURNING"));
         assert!(query.contains("NOW()"));
     }

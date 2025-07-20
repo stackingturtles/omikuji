@@ -1,15 +1,18 @@
 #[cfg(test)]
 mod tests {
     mod gas_estimator_tests {
-        use crate::config::models::{FeeBumpingConfig, GasConfig, Network};
+        use crate::config::models::{FeeBumpingConfig, GasConfig, Network, NetworkNode};
         use crate::gas::estimator::GasEstimate;
         use alloy::primitives::U256;
 
         fn create_test_network(tx_type: &str) -> Network {
             Network {
                 name: "test".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
-                ws_url: None,
+                nodes: vec![NetworkNode {
+                    name: "Test Node".to_string(),
+                    rpc_url: "http://localhost:8545".to_string(),
+                    ws_url: None,
+                }],
                 transaction_type: tx_type.to_string(),
                 gas_config: GasConfig {
                     gas_limit: None,
@@ -26,6 +29,8 @@ mod tests {
                 },
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             }
         }
 
@@ -311,28 +316,38 @@ mod tests {
     }
 
     mod gas_manager_tests {
-        use crate::config::models::Network;
+        use crate::config::models::{Network, NetworkNode};
 
         #[test]
         fn test_gas_manager_creation() {
             let _networks = vec![
                 Network {
                     name: "mainnet".to_string(),
-                    rpc_url: "https://eth.llamarpc.com".to_string(),
-                    ws_url: None,
+                    nodes: vec![NetworkNode {
+                        name: "Public RPC".to_string(),
+                        rpc_url: "https://eth.llamarpc.com".to_string(),
+                        ws_url: None,
+                    }],
                     transaction_type: "eip1559".to_string(),
                     gas_config: Default::default(),
                     gas_token: "ethereum".to_string(),
                     gas_token_symbol: "ETH".to_string(),
+                    rpc_url: None,
+                    ws_url: None,
                 },
                 Network {
                     name: "polygon".to_string(),
-                    rpc_url: "https://polygon-rpc.com".to_string(),
-                    ws_url: None,
+                    nodes: vec![NetworkNode {
+                        name: "Polygon RPC".to_string(),
+                        rpc_url: "https://polygon-rpc.com".to_string(),
+                        ws_url: None,
+                    }],
                     transaction_type: "eip1559".to_string(),
                     gas_config: Default::default(),
                     gas_token: "matic".to_string(),
                     gas_token_symbol: "MATIC".to_string(),
+                    rpc_url: None,
+                    ws_url: None,
                 },
             ];
 

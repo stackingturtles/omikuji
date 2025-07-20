@@ -67,7 +67,7 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
     let feed_log_exists: (bool,) = sqlx::query_as(
         "SELECT EXISTS (
             SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            WHERE table_schema = 'omikuji' 
             AND table_name = 'feed_log'
         )",
     )
@@ -76,14 +76,14 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
     .context("Failed to check if feed_log table exists")?;
 
     if !feed_log_exists.0 {
-        return Err(anyhow::anyhow!("Table 'feed_log' does not exist"));
+        return Err(anyhow::anyhow!("Table 'feed_log' does not exist in schema 'omikuji'"));
     }
 
     // Check transaction_log table
     let transaction_log_exists: (bool,) = sqlx::query_as(
         "SELECT EXISTS (
             SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            WHERE table_schema = 'omikuji' 
             AND table_name = 'transaction_log'
         )",
     )
@@ -92,27 +92,27 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
     .context("Failed to check if transaction_log table exists")?;
 
     if !transaction_log_exists.0 {
-        return Err(anyhow::anyhow!("Table 'transaction_log' does not exist"));
+        return Err(anyhow::anyhow!("Table 'transaction_log' does not exist in schema 'omikuji'"));
     }
 
-    // Check gas_price_log table
-    let gas_price_log_exists: (bool,) = sqlx::query_as(
+    // Check gas_token_prices table (replaces the old gas_price_log)
+    let gas_token_prices_exists: (bool,) = sqlx::query_as(
         "SELECT EXISTS (
             SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = 'gas_price_log'
+            WHERE table_schema = 'omikuji' 
+            AND table_name = 'gas_token_prices'
         )",
     )
     .fetch_one(pool)
     .await
-    .context("Failed to check if gas_price_log table exists")?;
+    .context("Failed to check if gas_token_prices table exists")?;
 
-    if !gas_price_log_exists.0 {
-        return Err(anyhow::anyhow!("Table 'gas_price_log' does not exist"));
+    if !gas_token_prices_exists.0 {
+        return Err(anyhow::anyhow!("Table 'gas_token_prices' does not exist in schema 'omikuji'"));
     }
 
     // Test write access to feed_log table
-    sqlx::query("SELECT COUNT(*) FROM feed_log LIMIT 1")
+    sqlx::query("SELECT COUNT(*) FROM omikuji.feed_log LIMIT 1")
         .fetch_one(pool)
         .await
         .context("Failed to query feed_log table - check SELECT permissions")?;
@@ -124,7 +124,7 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
         .context("Failed to begin test transaction")?;
 
     sqlx::query(
-        "INSERT INTO feed_log (feed_name, network_name, feed_value, feed_timestamp) 
+        "INSERT INTO omikuji.feed_log (feed_name, network_name, feed_value, feed_timestamp) 
          VALUES ($1, $2, $3, $4)",
     )
     .bind("_test_feed")
@@ -141,7 +141,7 @@ pub async fn verify_tables(pool: &DatabasePool) -> Result<()> {
         .context("Failed to rollback test transaction")?;
 
     info!("All required tables exist and are accessible");
-    debug!("Verified tables: feed_log, transaction_log, gas_price_log");
+    debug!("Verified tables: feed_log, transaction_log, gas_token_prices");
 
     Ok(())
 }
@@ -250,22 +250,22 @@ mod tests {
         // Test the SQL query format for checking table existence
         let query = "SELECT EXISTS (
             SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            WHERE table_schema = 'omikuji' 
             AND table_name = 'feed_log'
         )";
 
         assert!(query.contains("information_schema.tables"));
-        assert!(query.contains("table_schema = 'public'"));
+        assert!(query.contains("table_schema = 'omikuji'"));
         assert!(query.contains("table_name = 'feed_log'"));
     }
 
     #[test]
     fn test_test_insert_query() {
         // Test the format of the test insert query
-        let query = "INSERT INTO feed_log (feed_name, network_name, feed_value, feed_timestamp) 
+        let query = "INSERT INTO omikuji.feed_log (feed_name, network_name, feed_value, feed_timestamp) 
          VALUES ($1, $2, $3, $4)";
 
-        assert!(query.contains("INSERT INTO feed_log"));
+        assert!(query.contains("INSERT INTO omikuji.feed_log"));
         assert!(query.contains("feed_name"));
         assert!(query.contains("network_name"));
         assert!(query.contains("feed_value"));

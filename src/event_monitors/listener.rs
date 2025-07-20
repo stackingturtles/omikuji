@@ -1,13 +1,14 @@
 //! Event listening and subscription logic
 
 use super::error::{EventMonitorError, Result};
+use super::event_abi_decoder::EventAbiDecoder;
 use super::metrics::{EventMonitorMetrics, EventMonitorMetricsContext};
 use super::models::EventMonitor;
 use super::response_handler::ResponseHandler;
 use super::webhook_caller::WebhookCaller;
 use crate::database::{DatabasePool, EventRepository, models::NewProcessedEvent};
 use crate::network::NetworkManager;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Bytes};
 use alloy::providers::Provider;
 use alloy::rpc::types::Log;
 use std::collections::HashMap;
@@ -674,38 +675,54 @@ impl EventListener {
 
         let data = format!("0x{}", hex::encode(&log.data().data));
 
-        // Parse event signature to extract parameter types
-        let decoded_args = if let Some(params_start) = monitor.event_signature.find('(') {
-            if let Some(params_end) = monitor.event_signature.rfind(')') {
-                let params_str = &monitor.event_signature[params_start + 1..params_end];
-                let param_types: Vec<&str> = if params_str.is_empty() {
-                    vec![]
-                } else {
-                    params_str.split(',').map(|s| s.trim()).collect()
-                };
-                
+        // Parse event signature and decode parameters using EventAbiDecoder
+        let decoded_args = match EventAbiDecoder::parse_event(&monitor.event_signature) {
+            Ok(event) => {
                 debug!(
-                    "Decoding event '{}' with {} parameters: {:?}",
-                    event_name,
-                    param_types.len(),
-                    param_types
+                    "Decoding event '{}' with {} parameters",
+                    event.name,
+                    event.inputs.len()
                 );
-                
-                // Decode the event parameters
-                Self::decode_event_parameters(&topics, &log.data().data, &param_types, &event_name)?
-            } else {
+
+                // Convert topics to Bytes for the decoder
+                let topic_bytes: Vec<Bytes> = log
+                    .topics()
+                    .iter()
+                    .map(|t| Bytes::from(t.as_slice().to_vec()))
+                    .collect();
+
+                // Convert data to Bytes
+                let data_bytes = Bytes::from(log.data().data.clone());
+
+                // Decode the event
+                match EventAbiDecoder::decode_event(&event, &topic_bytes, &data_bytes, &monitor.name) {
+                    Ok(decoded) => serde_json::to_value(decoded).unwrap_or_else(|e| {
+                        error!("Failed to convert decoded event to JSON: {}", e);
+                        serde_json::json!({
+                            "error": "Failed to convert decoded event",
+                            "raw_topics": &topics,
+                            "raw_data": &data,
+                        })
+                    }),
+                    Err(e) => {
+                        error!("Failed to decode event parameters: {}", e);
+                        serde_json::json!({
+                            "error": format!("Decoding failed: {}", e),
+                            "raw_topics": &topics,
+                            "raw_data": &data,
+                        })
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to parse event signature '{}': {}", monitor.event_signature, e);
                 serde_json::json!({
-                    "error": "Invalid event signature format",
+                    "error": format!("Invalid event signature: {}", e),
+                    "signature": &monitor.event_signature,
                     "raw_topics": &topics,
                     "raw_data": &data,
                 })
             }
-        } else {
-            serde_json::json!({
-                "error": "Invalid event signature format",
-                "raw_topics": &topics,
-                "raw_data": &data,
-            })
         };
 
         Ok(ProcessedEvent {
@@ -720,108 +737,6 @@ impl EventListener {
             data,
             decoded_args,
         })
-    }
-    
-    /// Decode event parameters from topics and data
-    fn decode_event_parameters(
-        topics: &[String],
-        data: &[u8],
-        param_types: &[&str],
-        event_name: &str,
-    ) -> Result<serde_json::Value> {
-        use alloy::primitives::{I256, U256};
-        
-        let mut decoded = serde_json::Map::new();
-        let mut topic_index = 1; // Skip topic0 (event selector)
-        let mut data_offset = 0;
-        
-        // Parse parameter names and types
-        let params_with_names: Vec<(String, &str)> = param_types
-            .iter()
-            .enumerate()
-            .map(|(i, param)| {
-                // Split "type name" or just "type"
-                let parts: Vec<&str> = param.split_whitespace().collect();
-                match parts.len() {
-                    1 => (format!("param{}", i), parts[0]),
-                    2 => (parts[1].to_string(), parts[0]),
-                    _ => (format!("param{}", i), *param),
-                }
-            })
-            .collect();
-        
-        for (param_name, param_type) in params_with_names {
-            // Indexed parameters go in topics, non-indexed in data
-            // For now, assume primitive types in topics, complex types in data
-            let is_indexed = topic_index < topics.len() && 
-                (param_type == "address" || param_type.starts_with("uint") || 
-                 param_type.starts_with("int") || param_type == "bool");
-            
-            let value = if is_indexed {
-                // Decode from topic
-                let topic = &topics[topic_index];
-                topic_index += 1;
-                
-                match param_type {
-                    "address" => {
-                        // Address is the last 20 bytes of the 32-byte topic
-                        let addr = &topic[topic.len() - 40..]; // Last 40 hex chars = 20 bytes
-                        serde_json::json!(format!("0x{}", addr))
-                    }
-                    t if t.starts_with("uint") => {
-                        // Parse as U256
-                        if let Ok(val) = U256::from_str_radix(&topic[2..], 16) {
-                            serde_json::json!(val.to_string())
-                        } else {
-                            serde_json::json!(topic)
-                        }
-                    }
-                    t if t.starts_with("int") => {
-                        // Parse as I256
-                        if topic.len() >= 66 { // "0x" + 64 hex chars
-                            let bytes_str = &topic[2..];
-                            if let Ok(bytes) = hex::decode(bytes_str) {
-                                if bytes.len() == 32 {
-                                    let bytes_array: [u8; 32] = bytes.try_into().unwrap();
-                                    let i256 = I256::from_be_bytes(bytes_array);
-                                    serde_json::json!(i256.to_string())
-                                } else {
-                                    serde_json::json!(topic)
-                                }
-                            } else {
-                                serde_json::json!(topic)
-                            }
-                        } else {
-                            serde_json::json!(topic)
-                        }
-                    }
-                    "bool" => {
-                        let val = topic.ends_with("1");
-                        serde_json::json!(val)
-                    }
-                    _ => serde_json::json!(topic),
-                }
-            } else {
-                // Decode from data - for now just show hex
-                // In a full implementation, we'd properly decode based on type
-                if data_offset < data.len() {
-                    let chunk_size = 32; // Most types are 32 bytes
-                    let end = (data_offset + chunk_size).min(data.len());
-                    let chunk = &data[data_offset..end];
-                    data_offset = end;
-                    serde_json::json!(format!("0x{}", hex::encode(chunk)))
-                } else {
-                    serde_json::json!(null)
-                }
-            };
-            
-            decoded.insert(param_name, value);
-        }
-        
-        // Add metadata
-        decoded.insert("_event".to_string(), serde_json::json!(event_name));
-        
-        Ok(serde_json::Value::Object(decoded))
     }
 }
 
@@ -1055,25 +970,54 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_monitoring() {
+        // Create mock servers for the networks
+        let mut mock_server1 = mockito::Server::new_async().await;
+        let mut mock_server2 = mockito::Server::new_async().await;
+        
+        // Mock the necessary RPC calls
+        mock_server1
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+        
+        mock_server2
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+        
         // Create a test network configuration
         let networks = vec![
             crate::config::models::Network {
                 name: "ethereum-mainnet".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
-                ws_url: None,
+                nodes: vec![crate::config::models::NetworkNode {
+                    name: "Local Node".to_string(),
+                    rpc_url: mock_server1.url(),
+                    ws_url: None,
+                }],
                 transaction_type: "eip1559".to_string(),
                 gas_config: crate::config::models::GasConfig::default(),
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             },
             crate::config::models::Network {
                 name: "base-mainnet".to_string(),
-                rpc_url: "http://localhost:8546".to_string(),
-                ws_url: None,
+                nodes: vec![crate::config::models::NetworkNode {
+                    name: "Local Node".to_string(),
+                    rpc_url: mock_server2.url(),
+                    ws_url: None,
+                }],
                 transaction_type: "eip1559".to_string(),
                 gas_config: crate::config::models::GasConfig::default(),
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             },
         ];
 
@@ -1145,12 +1089,17 @@ mod tests {
         // Create a network with valid URL
         let networks = vec![crate::config::models::Network {
             name: "test-network".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             transaction_type: "legacy".to_string(),
             gas_config: crate::config::models::GasConfig::default(),
             gas_token: "test".to_string(),
             gas_token_symbol: "TEST".to_string(),
+            rpc_url: None,
+            ws_url: None,
         }];
 
         let network_manager = Arc::new(NetworkManager::new(&networks).await.unwrap());
@@ -1198,6 +1147,7 @@ mod tests {
                 monitors,
                 webhook_caller,
                 response_handler,
+                None,
             )
             .await;
             tx.send(result).await.unwrap();
@@ -1242,18 +1192,29 @@ mod tests {
     #[tokio::test]
     async fn test_subscribe_with_invalid_event_signature() {
         use alloy::providers::ProviderBuilder;
-
+        
+        let mut mock_server = mockito::Server::new_async().await;
+        
+        // Mock the necessary RPC calls
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+        
         let provider =
-            Arc::new(ProviderBuilder::new().on_http("http://localhost:8545".parse().unwrap()));
+            Arc::new(ProviderBuilder::new().on_http(mock_server.url().parse().unwrap()));
 
         let (tx, _rx) = mpsc::channel(100);
         let mut monitor = test_monitor();
         // This signature is still valid for parsing but would be invalid for actual ABI decoding
-        monitor.event_signature = "InvalidEvent(".to_string();
+        monitor.event_signature = "InvalidEvent()".to_string();
 
         // Currently parse_event_selector just hashes the string, so this won't fail
         // In a real implementation with proper ABI parsing, this might fail
         let result = EventListener::subscribe_to_monitor_events(provider, monitor, tx).await;
+        
         assert!(result.is_ok());
 
         if let Ok(handle) = result {
@@ -1303,6 +1264,7 @@ mod tests {
             "test-network",
             &webhook_caller,
             &response_handler,
+            &None,
         )
         .await;
 
@@ -1350,6 +1312,7 @@ mod tests {
             "test-network",
             &webhook_caller,
             &response_handler,
+            &None,
         )
         .await;
 
@@ -1419,6 +1382,7 @@ mod tests {
             monitors,
             webhook_caller,
             response_handler,
+            None,
         );
 
         // Give it 100ms to start up and then timeout
@@ -1437,5 +1401,120 @@ mod tests {
         };
 
         assert_eq!(context.omikuji_version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_decode_event_data_with_indexed_params() {
+        use alloy::primitives::{b256, B256, U256, Address};
+        use alloy::rpc::types::Log as AlloyLog;
+        use alloy::sol_types::SolValue;
+        
+        // Create monitor for Transfer event with indexed parameters
+        let mut monitor = test_monitor();
+        monitor.event_signature = "Transfer(address indexed from, address indexed to, uint256 value)".to_string();
+        
+        // Create test addresses
+        let from_addr = Address::from([0x11; 20]);
+        let to_addr = Address::from([0x22; 20]);
+        let value = U256::from(1000u64);
+        
+        // Create log with proper topics for indexed parameters
+        let log = AlloyLog {
+            inner: alloy::primitives::Log {
+                address: monitor.contract_address,
+                data: alloy::primitives::LogData::new_unchecked(
+                    vec![
+                        b256!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"), // Transfer event selector
+                        B256::left_padding_from(&from_addr.to_vec()), // from address
+                        B256::left_padding_from(&to_addr.to_vec()),   // to address
+                    ],
+                    value.abi_encode().into(), // value in data
+                ),
+            },
+            block_hash: Some(B256::ZERO),
+            block_number: Some(12345),
+            block_timestamp: None,
+            transaction_hash: Some(b256!(
+                "0000000000000000000000000000000000000000000000000000000000000002"
+            )),
+            transaction_index: Some(0),
+            log_index: Some(0),
+            removed: false,
+        };
+        
+        let result = EventListener::decode_event_data(&log, &monitor);
+        assert!(result.is_ok());
+        
+        let event = result.unwrap();
+        assert_eq!(event.event_name, "Transfer");
+        
+        // Check decoded arguments
+        let args = event.decoded_args.as_object().unwrap();
+        assert!(args.contains_key("from"));
+        assert!(args.contains_key("to"));
+        assert!(args.contains_key("value"));
+        
+        // Verify the values
+        assert!(args["from"].as_str().unwrap().to_lowercase().contains("1111"));
+        assert!(args["to"].as_str().unwrap().to_lowercase().contains("2222"));
+        assert_eq!(args["value"].as_str().unwrap(), "1000");
+    }
+
+    #[test]
+    fn test_decode_event_data_with_arrays() {
+        use alloy::primitives::{b256, B256, U256, Address};
+        use alloy::rpc::types::Log as AlloyLog;
+        use alloy::sol_types::SolValue;
+        
+        // Create monitor for event with array parameters
+        let mut monitor = test_monitor();
+        monitor.event_signature = "Winners(address[] winners, uint256[] amounts)".to_string();
+        
+        // Create test data
+        let winners = vec![
+            Address::from([0x11; 20]),
+            Address::from([0x22; 20]),
+        ];
+        let amounts = vec![U256::from(100), U256::from(200)];
+        
+        let log = AlloyLog {
+            inner: alloy::primitives::Log {
+                address: monitor.contract_address,
+                data: alloy::primitives::LogData::new_unchecked(
+                    vec![
+                        b256!("1234567890123456789012345678901234567890123456789012345678901234"), // Event selector
+                    ],
+                    (winners, amounts).abi_encode().into(),
+                ),
+            },
+            block_hash: Some(B256::ZERO),
+            block_number: Some(12345),
+            block_timestamp: None,
+            transaction_hash: Some(b256!(
+                "0000000000000000000000000000000000000000000000000000000000000002"
+            )),
+            transaction_index: Some(0),
+            log_index: Some(0),
+            removed: false,
+        };
+        
+        let result = EventListener::decode_event_data(&log, &monitor);
+        assert!(result.is_ok());
+        
+        let event = result.unwrap();
+        assert_eq!(event.event_name, "Winners");
+        
+        // Check decoded arguments
+        let args = event.decoded_args.as_object().unwrap();
+        assert!(args.contains_key("winners"));
+        assert!(args.contains_key("amounts"));
+        
+        // Verify arrays
+        let winners_arr = args["winners"].as_array().unwrap();
+        let amounts_arr = args["amounts"].as_array().unwrap();
+        assert_eq!(winners_arr.len(), 2);
+        assert_eq!(amounts_arr.len(), 2);
+        assert_eq!(amounts_arr[0].as_str().unwrap(), "100");
+        assert_eq!(amounts_arr[1].as_str().unwrap(), "200");
     }
 }

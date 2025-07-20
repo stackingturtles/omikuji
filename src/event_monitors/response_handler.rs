@@ -815,12 +815,17 @@ mod tests {
         // Mock network manager to return a provider
         let networks = vec![crate::config::models::Network {
             name: "ethereum-mainnet".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             transaction_type: "legacy".to_string(),
             gas_config: crate::config::models::GasConfig::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         }];
         let network_manager = Arc::new(NetworkManager::new(&networks).await.unwrap());
         let handler = ContractCallHandler {
@@ -855,12 +860,17 @@ mod tests {
 
         let network_config = crate::config::models::Network {
             name: "ethereum-mainnet".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             transaction_type: "legacy".to_string(),
             gas_config: crate::config::models::GasConfig::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         };
 
         let call_config = crate::event_monitors::models::ContractCallConfig {
@@ -912,12 +922,17 @@ mod tests {
         );
         let network_config = crate::config::models::Network {
             name: "ethereum-mainnet".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             transaction_type: "legacy".to_string(),
             gas_config: crate::config::models::GasConfig::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         };
 
         let call_config = crate::event_monitors::models::ContractCallConfig {
@@ -966,12 +981,17 @@ mod tests {
         );
         let network_config = crate::config::models::Network {
             name: "ethereum-mainnet".to_string(),
-            rpc_url: "http://localhost:8545".to_string(),
-            ws_url: None,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Local Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
             transaction_type: "legacy".to_string(),
             gas_config: crate::config::models::GasConfig::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         };
 
         let call_config = crate::event_monitors::models::ContractCallConfig {
