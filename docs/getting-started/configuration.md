@@ -127,9 +127,9 @@ If not specified, Omikuji uses the current time.
 
 ## Key Management
 
-Omikuji supports two methods for managing private keys: OS keyring (recommended) and environment variables.
+Omikuji supports two methods for managing private keys: OS keyring and environment variables. See the [Key Storage Guide](../configuration/key-storage.md) for choosing the right storage backend for your environment.
 
-### OS Keyring Storage (Recommended)
+### OS Keyring Storage
 
 The most secure method is to use your operating system's keyring/keychain:
 
@@ -171,9 +171,11 @@ omikuji key migrate
 
 #### Platform Support
 
-- **macOS**: Uses Keychain
-- **Linux**: Uses Secret Service (GNOME Keyring, KDE Wallet)
+- **macOS**: Uses Keychain (works well)
+- **Linux**: Uses Secret Service (GNOME Keyring, KDE Wallet) - requires desktop session, doesn't work over SSH
 - **Windows**: Uses Windows Credential Manager
+
+**Note**: OS Keyring is best suited for desktop/local development. For server deployments (SSH, remote servers, production), consider using Vault or AWS Secrets Manager instead.
 
 ### Environment Variable Storage
 
