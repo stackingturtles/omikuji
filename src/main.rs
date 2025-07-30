@@ -428,14 +428,14 @@ async fn main() -> Result<()> {
     };
 
     // Start Prometheus metrics server
-    if let Err(e) = metrics::start_metrics_server(9090).await {
+    if let Err(e) = metrics::start_metrics_server(config.metrics.port).await {
         error!("Failed to start metrics server: {}", e);
         error!("Continuing without metrics endpoint");
     } else {
-        info!("Prometheus metrics available at http://0.0.0.0:9090/metrics");
+        info!("Prometheus metrics available at http://0.0.0.0:{}/metrics", config.metrics.port);
 
         // Update metrics server status
-        ConfigMetrics::set_metrics_server_status(true, 9090);
+        ConfigMetrics::set_metrics_server_status(true, config.metrics.port);
     }
 
     // Initialize and start event monitoring
