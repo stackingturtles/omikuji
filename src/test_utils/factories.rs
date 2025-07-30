@@ -8,6 +8,9 @@ use alloy::primitives::{TxHash, U256};
 use chrono::{DateTime, Utc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(test)]
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+
 /// Factory for creating GasTokenPrice test objects
 pub struct GasTokenPriceFactory;
 
@@ -255,6 +258,23 @@ impl TransactionDetailsFactory {
     pub fn create_inefficient(tx_hash: &str, feed_name: &str, network: &str) -> TransactionDetails {
         Self::create_success(tx_hash, feed_name, network, 100_000, 25.0) // 50% efficiency
     }
+}
+
+/// Create a test database pool
+#[cfg(test)]
+pub async fn create_test_db_pool() -> Pool<Postgres> {
+    use std::env;
+
+    // Use TEST_DATABASE_URL if available, otherwise use DATABASE_URL
+    let database_url = env::var("TEST_DATABASE_URL")
+        .or_else(|_| env::var("DATABASE_URL"))
+        .expect("Neither TEST_DATABASE_URL nor DATABASE_URL is set");
+
+    PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to create test database pool")
 }
 
 /// Factory for creating test transaction hashes

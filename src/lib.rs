@@ -6,6 +6,7 @@ pub mod datafeed;
 pub mod error;
 pub mod error_context;
 pub mod error_handlers;
+pub mod event_monitors;
 pub mod gas;
 pub mod gas_price;
 pub mod metrics;

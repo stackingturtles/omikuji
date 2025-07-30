@@ -207,9 +207,16 @@ impl ConfigMetrics {
 
         // Set network configs
         for network in &config.networks {
+            // Use the first node's RPC URL for metrics
+            let rpc_url = network
+                .nodes
+                .first()
+                .map(|node| node.rpc_url.as_str())
+                .unwrap_or("");
+
             Self::set_network_config(
                 &network.name,
-                &network.rpc_url,
+                rpc_url,
                 &network.transaction_type,
                 network.gas_config.gas_multiplier,
             );
@@ -373,17 +380,25 @@ mod tests {
     #[test]
     fn test_startup_info_with_config() {
         use crate::config::metrics_config::MetricsConfig;
-        use crate::config::models::{Datafeed, KeyStorageConfig, Network, OmikujiConfig};
+        use crate::config::models::{
+            Datafeed, KeyStorageConfig, Network, NetworkNode, OmikujiConfig,
+        };
         use crate::gas_price::models::GasPriceFeedConfig;
 
         let config = OmikujiConfig {
             networks: vec![Network {
                 name: "test-network".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
+                nodes: vec![NetworkNode {
+                    name: "Test Node".to_string(),
+                    rpc_url: "http://localhost:8545".to_string(),
+                    ws_url: None,
+                }],
                 transaction_type: "eip1559".to_string(),
                 gas_config: Default::default(),
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             }],
             datafeeds: vec![Datafeed {
                 name: "test-feed".to_string(),
@@ -412,6 +427,8 @@ mod tests {
             metrics: MetricsConfig::default(),
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
         };
 
         ConfigMetrics::record_startup_info(&config);

@@ -329,7 +329,6 @@ pub mod address_edge_cases {
 
 /// Utility for testing error scenarios
 pub mod error_scenarios {
-    use std::collections::HashMap;
 
     /// Common HTTP error codes to test
     pub fn http_error_codes() -> Vec<(u16, &'static str)> {

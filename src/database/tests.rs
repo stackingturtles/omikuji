@@ -96,6 +96,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_establish_connection_no_database_url() {
+        // Save current DATABASE_URL if it exists
+        let saved_url = std::env::var("DATABASE_URL").ok();
+        
         // Ensure DATABASE_URL is not set
         mock_db::cleanup_test_db_url();
 
@@ -103,20 +106,36 @@ mod tests {
         assert!(result.is_err());
 
         let err = result.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("DATABASE_URL environment variable not set"));
+        assert!(
+            err.to_string()
+                .contains("DATABASE_URL environment variable not set"),
+            "Expected error about DATABASE_URL not set, got: {}",
+            err
+        );
+        
+        // Restore DATABASE_URL if it was set
+        if let Some(url) = saved_url {
+            std::env::set_var("DATABASE_URL", url);
+        }
     }
 
     #[tokio::test]
     async fn test_establish_connection_invalid_url() {
+        // Save current DATABASE_URL if it exists
+        let saved_url = std::env::var("DATABASE_URL").ok();
+        
         // Set an invalid database URL
         std::env::set_var("DATABASE_URL", "invalid://url");
 
         let result = establish_connection().await;
         assert!(result.is_err());
 
-        mock_db::cleanup_test_db_url();
+        // Restore DATABASE_URL if it was set, otherwise clean up
+        if let Some(url) = saved_url {
+            std::env::set_var("DATABASE_URL", url);
+        } else {
+            mock_db::cleanup_test_db_url();
+        }
     }
 
     #[test]
@@ -165,6 +184,8 @@ mod tests {
             metrics: MetricsConfig::default(),
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
         };
 
         assert!(config.database_cleanup.enabled);
@@ -206,6 +227,8 @@ mod tests {
             metrics: MetricsConfig::default(),
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
         };
 
         // Mock repository for testing

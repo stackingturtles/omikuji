@@ -1,7 +1,9 @@
 //! Test data builders for creating common test objects
 
 use crate::config::metrics_config::MetricsConfig;
-use crate::config::models::{DatabaseCleanupConfig, GasConfig, Network, OmikujiConfig};
+use crate::config::models::{
+    DatabaseCleanupConfig, GasConfig, Network, NetworkNode, OmikujiConfig,
+};
 use crate::gas_price::models::GasPriceFeedConfig;
 
 /// Builder for creating test Network configurations
@@ -20,7 +22,7 @@ impl NetworkBuilder {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            rpc_url: format!("http://localhost:8545/{}", name),
+            rpc_url: format!("http://localhost:8545/{name}"),
             transaction_type: "eip1559".to_string(),
             gas_config: GasConfig::default(),
             gas_token: "ethereum".to_string(),
@@ -57,11 +59,17 @@ impl NetworkBuilder {
     pub fn build(self) -> Network {
         Network {
             name: self.name,
-            rpc_url: self.rpc_url,
+            nodes: vec![NetworkNode {
+                name: "Default Node".to_string(),
+                rpc_url: self.rpc_url,
+                ws_url: None,
+            }],
             transaction_type: self.transaction_type,
             gas_config: self.gas_config,
             gas_token: self.gas_token,
             gas_token_symbol: self.gas_token_symbol,
+            rpc_url: None,
+            ws_url: None,
         }
     }
 
@@ -156,6 +164,8 @@ impl ConfigBuilder {
             metrics: self.metrics,
             gas_price_feeds: self.gas_price_feeds,
             scheduled_tasks: self.scheduled_tasks,
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
         }
     }
 
@@ -275,7 +285,7 @@ mod tests {
             .build();
 
         assert_eq!(network.name, "test-network");
-        assert_eq!(network.rpc_url, "http://localhost:8545");
+        assert_eq!(network.nodes[0].rpc_url, "http://localhost:8545");
         assert_eq!(network.transaction_type, "legacy");
         assert_eq!(network.gas_token, "ethereum");
         assert_eq!(network.gas_token_symbol, "ETH");

@@ -76,7 +76,12 @@ async fn main() -> Result<()> {
     );
 
     for network in &config.networks {
-        info!("Network: {} ({})", network.name, network.rpc_url);
+        let rpc_url = network
+            .nodes
+            .first()
+            .map(|node| node.rpc_url.as_str())
+            .unwrap_or("no nodes configured");
+        info!("Network: {} ({})", network.name, rpc_url);
     }
 
     for datafeed in &config.datafeeds {
@@ -243,7 +248,7 @@ async fn main() -> Result<()> {
                             }
                             Err(e) => {
                                 error!("Database tables are not accessible: {}", e);
-                                error!("Please ensure the required tables exist (feed_log, transaction_log, gas_price_log)");
+                                error!("Please ensure the required tables exist (feed_log, transaction_log, gas_token_prices)");
                                 error!("Continuing without database support");
                                 ConfigMetrics::set_database_status(false);
                                 None
@@ -433,6 +438,69 @@ async fn main() -> Result<()> {
         ConfigMetrics::set_metrics_server_status(true, 9090);
     }
 
+    // Initialize and start event monitoring
+    let event_monitor_handles = if !config.event_monitors.is_empty() {
+        info!(
+            "Initializing event monitoring with {} monitors",
+            config.event_monitors.len()
+        );
+
+        // Debug output for each event monitor
+        for monitor in &config.event_monitors {
+            info!(
+                "Event monitor '{}': network='{}', contract='{}', event='{}'",
+                monitor.name, monitor.network, monitor.contract_address, monitor.event_signature
+            );
+            debug!(
+                "  Webhook: {:?} {}",
+                monitor.webhook.method, monitor.webhook.url
+            );
+        }
+
+        // Create event monitoring components
+        let webhook_caller = Arc::new(omikuji::event_monitors::WebhookCaller::new());
+        let response_handler = Arc::new(omikuji::event_monitors::ResponseHandler::new(
+            Arc::clone(&network_manager),
+            Arc::new(config.clone()),
+        ));
+
+        // Create event listener with all configured monitors
+        let event_listener = if let Some(ref pool) = &database_pool {
+            omikuji::event_monitors::EventListener::with_database(
+                Arc::clone(&network_manager),
+                webhook_caller,
+                response_handler,
+                config.event_monitors.clone(),
+                pool.clone(),
+            )
+        } else {
+            omikuji::event_monitors::EventListener::new(
+                Arc::clone(&network_manager),
+                webhook_caller,
+                response_handler,
+                config.event_monitors.clone(),
+            )
+        };
+
+        // Start monitoring
+        match event_listener.start_monitoring().await {
+            Ok(handles) => {
+                info!(
+                    "Started event monitoring with {} active subscriptions",
+                    handles.len()
+                );
+                Some(handles)
+            }
+            Err(e) => {
+                error!("Failed to start event monitoring: {}", e);
+                None
+            }
+        }
+    } else {
+        info!("No event monitors configured");
+        None
+    };
+
     // Start wallet balance monitor
     let mut wallet_monitor =
         omikuji::wallet::WalletBalanceMonitor::new(Arc::clone(&network_manager));
@@ -474,6 +542,15 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Stop event monitors if running
+    if let Some(handles) = event_monitor_handles {
+        info!("Stopping event monitors...");
+        for handle in handles {
+            handle.abort();
+        }
+        info!("Event monitors stopped successfully");
+    }
+
     // Stop cleanup manager if running
     if let Some(mut cleanup_manager) = cleanup_manager {
         if let Err(e) = cleanup_manager.stop().await {
@@ -491,7 +568,7 @@ mod tests {
     use config::metrics_config::MetricsConfig;
     use config::models::{
         AwsSecretsConfig, DatabaseCleanupConfig, GasConfig, KeyStorageConfig, KeyringConfig,
-        Network, OmikujiConfig, VaultConfig,
+        Network, NetworkNode, OmikujiConfig, VaultConfig,
     };
     use gas_price::models::GasPriceFeedConfig;
     use std::fs;
@@ -501,11 +578,17 @@ mod tests {
         OmikujiConfig {
             networks: vec![Network {
                 name: "test-network".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
+                nodes: vec![NetworkNode {
+                    name: "Local Node".to_string(),
+                    rpc_url: "http://localhost:8545".to_string(),
+                    ws_url: None,
+                }],
                 transaction_type: "eip1559".to_string(),
                 gas_config: GasConfig::default(),
                 gas_token: "ethereum".to_string(),
                 gas_token_symbol: "ETH".to_string(),
+                rpc_url: None,
+                ws_url: None,
             }],
             datafeeds: vec![],
             database_cleanup: DatabaseCleanupConfig::default(),
@@ -520,6 +603,8 @@ mod tests {
             metrics: MetricsConfig::default(),
             gas_price_feeds: GasPriceFeedConfig::default(),
             scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
         }
     }
 

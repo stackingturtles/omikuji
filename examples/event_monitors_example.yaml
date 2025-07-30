@@ -1,0 +1,69 @@
+# Example configuration for event monitors
+
+networks:
+  - name: ethereum-mainnet
+    rpc_url: https://eth.llamarpc.com
+    ws_url: wss://eth.llamarpc.com  # Optional WebSocket URL for event subscriptions
+    
+  - name: base-mainnet
+    rpc_url: https://base.llamarpc.com
+
+datafeeds: []  # No datafeeds in this example
+
+# Event monitors configuration
+event_monitors:
+  # Example 1: Monitor price requests from an oracle contract
+  - name: price_request_monitor
+    network: ethereum-mainnet
+    contract_address: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"  # Example: Chainlink ETH/USD
+    event_signature: "AnswerUpdated(int256 indexed current,uint256 indexed roundId,uint256 updatedAt)"
+    webhook:
+      url: "https://api.example.com/handle-price-update"
+      method: POST
+      headers:
+        Authorization: "Bearer ${WEBHOOK_API_KEY}"
+        Content-Type: "application/json"
+      timeout_seconds: 30
+      retry_attempts: 3
+      retry_delay_seconds: 5
+    response:
+      type: log_only  # For Phase 1, just log responses
+
+  # Example 2: Monitor transfer events
+  - name: large_transfer_monitor
+    network: ethereum-mainnet
+    contract_address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"  # USDC
+    event_signature: "Transfer(address indexed from,address indexed to,uint256 value)"
+    webhook:
+      url: "https://alerts.example.com/large-transfers"
+      method: POST
+      timeout_seconds: 10
+      retry_attempts: 2
+      retry_delay_seconds: 2
+    response:
+      type: log_only
+
+  # Example 3: Future - contract call response (Phase 2)
+  - name: liquidation_protection
+    network: base-mainnet
+    contract_address: "0x1234567890123456789012345678901234567890"
+    event_signature: "PositionAtRisk(address indexed user,uint256 healthFactor)"
+    webhook:
+      url: "https://keeper.example.com/check-liquidation"
+      method: POST
+      headers:
+        X-API-Key: "${KEEPER_API_KEY}"
+    response:
+      type: contract_call
+      contract_call:
+        target_contract: "0xProtectionContract"
+        max_gas_price_gwei: 100
+        gas_limit_multiplier: 1.5
+        value_wei: 0
+      # Phase 3: Add validation
+      validation:
+        require_signature: true
+        allowed_signers: 
+          - "0x1111111111111111111111111111111111111111"
+          - "0x2222222222222222222222222222222222222222"
+        max_response_age_seconds: 300

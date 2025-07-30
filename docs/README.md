@@ -21,6 +21,7 @@ Detailed guides for specific features and use cases.
 - **[Gas Monitoring](guides/gas-monitoring.md)** - Track and analyze gas consumption
 - **[Debug Logging](guides/debug-logging.md)** - Troubleshooting with detailed logs
 - **[Scheduled Tasks](guides/scheduled-tasks.md)** - Automate smart contract function execution
+- **[WebSocket Events](guides/websocket-events.md)** - Real-time event monitoring with WebSocket support
 
 ### 📋 Reference
 Complete technical reference documentation.

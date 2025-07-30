@@ -350,11 +350,17 @@ where
         // Create a minimal network config for read operations
         let network_config = NetworkConfig {
             name: network_name,
-            rpc_url: String::new(), // Not needed for reads
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Default Node".to_string(),
+                rpc_url: String::new(), // Not needed for reads
+                ws_url: None,
+            }],
             transaction_type: "eip1559".to_string(),
             gas_config: Default::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            rpc_url: None,
+            ws_url: None,
         };
 
         Self {

@@ -48,7 +48,7 @@ impl TransactionLogRepository {
 
         let result = sqlx::query_as::<_, (i32,)>(
             r#"
-            INSERT INTO transaction_log (
+            INSERT INTO omikuji.transaction_log (
                 tx_hash, feed_name, network_name, gas_limit, gas_used,
                 gas_price_gwei, total_cost_wei, efficiency_percent,
                 tx_type, status, block_number, error_message
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn test_save_transaction_query() {
         let query = r#"
-            INSERT INTO transaction_log (
+            INSERT INTO omikuji.transaction_log (
                 tx_hash, feed_name, network_name, gas_limit, gas_used,
                 gas_price_gwei, total_cost_wei, efficiency_percent,
                 tx_type, status, block_number, error_message
@@ -168,7 +168,7 @@ mod tests {
             RETURNING id
             "#;
 
-        assert!(query.contains("INSERT INTO transaction_log"));
+        assert!(query.contains("INSERT INTO omikuji.transaction_log"));
         assert!(query.contains("ON CONFLICT (tx_hash) DO UPDATE"));
         assert!(query.contains("RETURNING id"));
     }
@@ -189,7 +189,7 @@ mod tests {
                 SUM(total_cost_wei::NUMERIC)::TEXT as total_cost_wei,
                 MIN(created_at) as first_transaction,
                 MAX(created_at) as last_transaction
-            FROM transaction_log
+            FROM omikuji.transaction_log
             WHERE feed_name = $1 AND network_name = $2
             GROUP BY feed_name, network_name
             "#;
@@ -202,13 +202,13 @@ mod tests {
     #[test]
     fn test_get_recent_query() {
         let query = r#"
-            SELECT * FROM transaction_log
+            SELECT * FROM omikuji.transaction_log
             WHERE feed_name = $1 AND network_name = $2
             ORDER BY created_at DESC
             LIMIT $3
             "#;
 
-        assert!(query.contains("SELECT * FROM transaction_log"));
+        assert!(query.contains("SELECT * FROM omikuji.transaction_log"));
         assert!(query.contains("ORDER BY created_at DESC"));
         assert!(query.contains("LIMIT $3"));
     }
@@ -225,11 +225,11 @@ mod tests {
     #[test]
     fn test_cleanup_query() {
         let query = r#"
-            DELETE FROM transaction_log
+            DELETE FROM omikuji.transaction_log
             WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '$1 days'
             "#;
 
-        assert!(query.contains("DELETE FROM transaction_log"));
+        assert!(query.contains("DELETE FROM omikuji.transaction_log"));
         assert!(query.contains("CURRENT_TIMESTAMP - INTERVAL"));
     }
 

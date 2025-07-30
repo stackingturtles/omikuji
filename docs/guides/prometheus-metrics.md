@@ -81,6 +81,44 @@ Omikuji exports comprehensive metrics for monitoring via Prometheus at `http://l
   - Description: Total number of transactions
   - Labels: `feed_name`, `network`, `status`, `tx_type`
 
+### Event Monitor Metrics
+
+- **`omikuji_event_monitors_active`** (Gauge)
+  - Description: Number of active event monitor subscriptions
+  - Labels: `network`
+  - Example: `omikuji_event_monitors_active{network="mainnet"} 5`
+
+- **`omikuji_events_received_total`** (Counter)
+  - Description: Total number of blockchain events received
+  - Labels: `monitor`, `network`, `event_type`
+  - Example: `omikuji_events_received_total{monitor="uniswap_monitor",network="mainnet",event_type="Swap"} 1234`
+
+- **`omikuji_events_processed_total`** (Counter)
+  - Description: Total number of events successfully processed
+  - Labels: `monitor`, `network`, `event_type`
+  - Example: `omikuji_events_processed_total{monitor="uniswap_monitor",network="mainnet",event_type="Swap"} 1230`
+
+- **`omikuji_webhook_calls_total`** (Counter)
+  - Description: Total number of webhook calls made
+  - Labels: `monitor`, `status`
+  - Example: `omikuji_webhook_calls_total{monitor="uniswap_monitor",status="success"} 1225`
+
+- **`omikuji_webhook_response_time_seconds`** (Histogram)
+  - Description: Webhook response time distribution in seconds
+  - Labels: `monitor`
+  - Buckets: 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0 seconds
+  - Example: `histogram_quantile(0.95, omikuji_webhook_response_time_seconds{monitor="uniswap_monitor"})`
+
+- **`omikuji_response_handler_executions_total`** (Counter)
+  - Description: Total number of response handler executions
+  - Labels: `monitor`, `response_type`, `status`
+  - Example: `omikuji_response_handler_executions_total{monitor="uniswap_monitor",response_type="contract_call",status="success"} 450`
+
+- **`omikuji_processing_errors_total`** (Counter)
+  - Description: Total number of event processing errors
+  - Labels: `monitor`, `error_type`
+  - Example: `omikuji_processing_errors_total{monitor="uniswap_monitor",error_type="webhook_timeout"} 5`
+
 ## Example PromQL Queries
 
 ### Basic Queries
@@ -116,6 +154,37 @@ time() - omikuji_contract_update_timestamp
 
 # Gas efficiency below 50%
 histogram_quantile(0.5, omikuji_gas_efficiency_percent) < 50
+
+# Event monitor success rate
+rate(omikuji_events_processed_total[5m]) / rate(omikuji_events_received_total[5m])
+
+# Webhook response time 95th percentile
+histogram_quantile(0.95, rate(omikuji_webhook_response_time_seconds_bucket[5m]))
+
+# Events dropped (received but not processed)
+sum(omikuji_events_received_total) - sum(omikuji_events_processed_total)
+```
+
+### Event Monitor Queries
+
+```promql
+# Active event monitors per network
+omikuji_event_monitors_active
+
+# Event processing rate per monitor
+rate(omikuji_events_processed_total[5m]) * 60
+
+# Webhook success rate
+sum(rate(omikuji_webhook_calls_total{status="success"}[5m])) / sum(rate(omikuji_webhook_calls_total[5m]))
+
+# Average webhook response time
+rate(omikuji_webhook_response_time_seconds_sum[5m]) / rate(omikuji_webhook_response_time_seconds_count[5m])
+
+# Top 5 monitors by event volume
+topk(5, sum by (monitor) (rate(omikuji_events_received_total[5m])))
+
+# Error rate by type
+sum by (error_type) (rate(omikuji_processing_errors_total[5m]))
 ```
 
 ### Monitoring Alerts
@@ -132,6 +201,18 @@ omikuji_feed_deviation_percent > 2
 
 # Transaction failures
 rate(omikuji_transactions_total{status="failed"}[5m]) > 0
+
+# Webhook failures alert
+rate(omikuji_webhook_calls_total{status="failed"}[5m]) > 0.1
+
+# Slow webhook responses (> 5 seconds)
+histogram_quantile(0.95, rate(omikuji_webhook_response_time_seconds_bucket[5m])) > 5
+
+# Event processing errors
+rate(omikuji_processing_errors_total[5m]) > 0
+
+# Event processing lag (events received but not processed)
+(sum(omikuji_events_received_total) - sum(omikuji_events_processed_total)) > 100
 ```
 
 ## Grafana Dashboard Example
@@ -170,6 +251,39 @@ Here's a sample Grafana dashboard configuration:
           "expr": "histogram_quantile(0.5, omikuji_gas_efficiency_percent)",
           "legendFormat": "Median efficiency {{feed_name}}"
         }]
+      },
+      {
+        "title": "Event Processing Rate",
+        "targets": [{
+          "expr": "rate(omikuji_events_processed_total[5m]) * 60",
+          "legendFormat": "{{monitor}} - {{event_type}}"
+        }]
+      },
+      {
+        "title": "Webhook Performance",
+        "targets": [
+          {
+            "expr": "rate(omikuji_webhook_response_time_seconds_sum[5m]) / rate(omikuji_webhook_response_time_seconds_count[5m])",
+            "legendFormat": "{{monitor}} avg response time"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(omikuji_webhook_response_time_seconds_bucket[5m]))",
+            "legendFormat": "{{monitor}} 95th percentile"
+          }
+        ]
+      },
+      {
+        "title": "Event Monitor Health",
+        "targets": [
+          {
+            "expr": "omikuji_event_monitors_active",
+            "legendFormat": "Active monitors on {{network}}"
+          },
+          {
+            "expr": "sum(rate(omikuji_webhook_calls_total{status=\"failed\"}[5m])) by (monitor)",
+            "legendFormat": "{{monitor}} failures/sec"
+          }
+        ]
       }
     ]
   }
@@ -220,6 +334,24 @@ Here's a sample Grafana dashboard configuration:
            for: 5m
            annotations:
              summary: "High deviation for {{ $labels.feed_name }}"
+         
+         - alert: WebhookFailures
+           expr: rate(omikuji_webhook_calls_total{status="failed"}[5m]) > 0.1
+           for: 5m
+           annotations:
+             summary: "High webhook failure rate for {{ $labels.monitor }}"
+         
+         - alert: SlowWebhookResponse
+           expr: histogram_quantile(0.95, rate(omikuji_webhook_response_time_seconds_bucket[5m])) > 5
+           for: 5m
+           annotations:
+             summary: "Slow webhook responses for {{ $labels.monitor }}"
+         
+         - alert: EventProcessingLag
+           expr: (sum by (monitor) (omikuji_events_received_total) - sum by (monitor) (omikuji_events_processed_total)) > 100
+           for: 10m
+           annotations:
+             summary: "Event processing lag for {{ $labels.monitor }}"
    ```
 
 ## Metric Retention

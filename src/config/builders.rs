@@ -107,6 +107,8 @@ impl OmikujiConfigBuilder {
             metrics: self.metrics,
             gas_price_feeds: self.gas_price_feeds,
             scheduled_tasks: self.scheduled_tasks,
+            event_monitors: Vec::new(),
+            default_execution_limits: Default::default(),
         }
     }
 }
@@ -122,6 +124,7 @@ impl Default for OmikujiConfigBuilder {
 pub struct NetworkBuilder {
     name: String,
     rpc_url: String,
+    ws_url: Option<String>,
     transaction_type: String,
     gas_config: GasConfig,
     gas_token: String,
@@ -134,6 +137,7 @@ impl NetworkBuilder {
         Self {
             name: name.into(),
             rpc_url: "http://localhost:8545".to_string(),
+            ws_url: None,
             transaction_type: "eip1559".to_string(),
             gas_config: GasConfig::default(),
             gas_token: "ethereum".to_string(),
@@ -144,6 +148,12 @@ impl NetworkBuilder {
     /// Set the RPC URL for this network
     pub fn with_rpc_url(mut self, url: impl Into<String>) -> Self {
         self.rpc_url = url.into();
+        self
+    }
+
+    /// Set the WebSocket URL for this network
+    pub fn with_ws_url(mut self, url: impl Into<String>) -> Self {
+        self.ws_url = Some(url.into());
         self
     }
 
@@ -170,11 +180,17 @@ impl NetworkBuilder {
     pub fn build(self) -> Network {
         Network {
             name: self.name,
-            rpc_url: self.rpc_url,
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Default Node".to_string(),
+                rpc_url: self.rpc_url,
+                ws_url: None,
+            }],
             transaction_type: self.transaction_type,
             gas_config: self.gas_config,
             gas_token: self.gas_token,
             gas_token_symbol: self.gas_token_symbol,
+            rpc_url: None,
+            ws_url: None,
         }
     }
 
@@ -662,7 +678,11 @@ mod tests {
             .build();
 
         assert_eq!(network.name, "ethereum-mainnet");
-        assert_eq!(network.rpc_url, "https://eth-mainnet.alchemyapi.io/v2/test");
+        assert_eq!(network.nodes.len(), 1);
+        assert_eq!(
+            network.nodes[0].rpc_url,
+            "https://eth-mainnet.alchemyapi.io/v2/test"
+        );
         assert_eq!(network.gas_token, "ethereum");
         assert_eq!(network.gas_token_symbol, "ETH");
     }
@@ -683,7 +703,8 @@ mod tests {
 
         let localhost = NetworkBuilder::localhost(8545);
         assert_eq!(localhost.name, "localhost");
-        assert_eq!(localhost.rpc_url, "http://localhost:8545");
+        assert_eq!(localhost.nodes.len(), 1);
+        assert_eq!(localhost.nodes[0].rpc_url, "http://localhost:8545");
         assert_eq!(localhost.transaction_type, "legacy");
     }
 

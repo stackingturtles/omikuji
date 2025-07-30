@@ -1,0 +1,181 @@
+{
+  "description": "Example webhook responses for Omikuji event monitors with contract execution",
+  
+  "simple_contract_call": {
+    "description": "Basic contract call response",
+    "response": {
+      "action": "execute",
+      "calls": [
+        {
+          "target": "0x1234567890123456789012345678901234567890",
+          "function": "updatePrice(uint256)",
+          "params": [42000000],
+          "value": "0"
+        }
+      ],
+      "metadata": {
+        "source": "external_api",
+        "timestamp": "2024-01-20T10:30:00Z"
+      }
+    }
+  },
+
+  "multiple_calls": {
+    "description": "Execute multiple contract calls in sequence",
+    "response": {
+      "action": "batch_execute", 
+      "calls": [
+        {
+          "target": "0x1234567890123456789012345678901234567890",
+          "function": "updatePrice(uint256)",
+          "params": [42000000],
+          "value": "0"
+        },
+        {
+          "target": "0x1234567890123456789012345678901234567890",
+          "function": "setTimestamp(uint256)",
+          "params": [1705749000],
+          "value": "0"
+        },
+        {
+          "target": "0x1234567890123456789012345678901234567890",
+          "function": "markUpdated(address)",
+          "params": ["0x5678901234567890123456789012345678901234"],
+          "value": "0"
+        }
+      ],
+      "metadata": {
+        "batch_id": "batch_123",
+        "total_operations": 3
+      }
+    }
+  },
+
+  "call_with_value": {
+    "description": "Contract call that sends ETH",
+    "response": {
+      "action": "execute",
+      "calls": [
+        {
+          "target": "0x1234567890123456789012345678901234567890",
+          "function": "depositAndUpdate(uint256,address)",
+          "params": [100, "0x9999999999999999999999999999999999999999"],
+          "value": "1000000000000000000"
+        }
+      ],
+      "metadata": {
+        "reason": "Deposit 1 ETH and update counter"
+      }
+    }
+  },
+
+  "complex_parameters": {
+    "description": "Contract call with complex parameter types",
+    "response": {
+      "action": "execute",
+      "calls": [
+        {
+          "target": "0x1234567890123456789012345678901234567890",
+          "function": "updateMultiple(uint256[],address[],bool)",
+          "params": [
+            [100, 200, 300],
+            [
+              "0x1111111111111111111111111111111111111111",
+              "0x2222222222222222222222222222222222222222",
+              "0x3333333333333333333333333333333333333333"
+            ],
+            true
+          ],
+          "value": "0"
+        }
+      ],
+      "metadata": {
+        "arrays_length": 3,
+        "operation": "bulk_update"
+      }
+    }
+  },
+
+  "log_only_response": {
+    "description": "Response that only logs, no contract execution",
+    "response": {
+      "action": "log",
+      "metadata": {
+        "message": "Event processed but no action required",
+        "event_id": "evt_123456",
+        "reason": "Threshold not met"
+      }
+    }
+  },
+
+  "error_response": {
+    "description": "Error response that prevents execution",
+    "response": {
+      "action": "error",
+      "error": {
+        "code": "INVALID_REQUEST",
+        "message": "Request validation failed",
+        "details": "Price value exceeds acceptable range"
+      },
+      "metadata": {
+        "request_id": "req_789",
+        "timestamp": "2024-01-20T10:31:00Z"
+      }
+    }
+  },
+
+  "defi_example": {
+    "description": "DeFi protocol automation example",
+    "response": {
+      "action": "execute",
+      "calls": [
+        {
+          "target": "0xDEF1234567890123456789012345678901234567",
+          "function": "swapExactTokensForTokens(uint256,uint256,address[],address,uint256)",
+          "params": [
+            "1000000000000000000",
+            "950000000",
+            [
+              "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+              "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+            ],
+            "0x5678901234567890123456789012345678901234",
+            1705749600
+          ],
+          "value": "0"
+        }
+      ],
+      "metadata": {
+        "protocol": "uniswap_v2",
+        "action": "swap_weth_to_usdc",
+        "expected_output": "950 USDC"
+      }
+    }
+  },
+
+  "oracle_response": {
+    "description": "Oracle price update example",
+    "response": {
+      "action": "execute",
+      "calls": [
+        {
+          "target": "0x0000000000000000000000000000000000000001",
+          "function": "submitPrice(uint256,uint256,bytes32)",
+          "params": [
+            1,
+            "2450000000",
+            "0x0000000000000000000000000000000000000000000000000000000000000042"
+          ],
+          "value": "0"
+        }
+      ],
+      "metadata": {
+        "price_feed": "ETH/USD",
+        "price": 2450.00,
+        "decimals": 8,
+        "source": "aggregated",
+        "sources_count": 5
+      }
+    }
+  }
+}

@@ -10,8 +10,17 @@ use tracing::info;
 /// Context for the transaction (e.g., "datafeed" or "scheduled_task")
 #[derive(Debug, Clone)]
 pub enum TransactionContext {
-    Datafeed { feed_name: String },
-    ScheduledTask { task_name: String },
+    Datafeed {
+        feed_name: String,
+    },
+    ScheduledTask {
+        task_name: String,
+    },
+    EventMonitor {
+        monitor_name: String,
+        event_name: String,
+        function_name: String,
+    },
 }
 
 impl TransactionContext {
@@ -19,6 +28,7 @@ impl TransactionContext {
         match self {
             TransactionContext::Datafeed { feed_name } => feed_name,
             TransactionContext::ScheduledTask { task_name } => task_name,
+            TransactionContext::EventMonitor { monitor_name, .. } => monitor_name,
         }
     }
 
@@ -26,6 +36,7 @@ impl TransactionContext {
         match self {
             TransactionContext::Datafeed { .. } => "datafeed",
             TransactionContext::ScheduledTask { .. } => "scheduled_task",
+            TransactionContext::EventMonitor { .. } => "event_monitor",
         }
     }
 }
@@ -114,6 +125,9 @@ impl<'a> TransactionHandler<'a> {
             }
             TransactionContext::ScheduledTask { .. } => {
                 // Scheduled task specific metrics can be added here
+            }
+            TransactionContext::EventMonitor { .. } => {
+                // Event monitor specific metrics can be added here
             }
         }
 

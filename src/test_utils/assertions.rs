@@ -1,7 +1,7 @@
 //! Custom assertion helpers for common test patterns
 
 use crate::datafeed::contract_utils::parse_address;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::Address;
 
 /// Custom assertions for address validation
 pub mod address_assertions {
@@ -10,13 +10,13 @@ pub mod address_assertions {
     /// Assert that an address string is valid
     pub fn assert_valid_address(addr: &str) {
         let parsed = parse_address(addr);
-        assert!(parsed.is_ok(), "Address should be valid: {}", addr);
+        assert!(parsed.is_ok(), "Address should be valid: {addr}");
     }
 
     /// Assert that an address string is invalid
     pub fn assert_invalid_address(addr: &str) {
         let parsed = parse_address(addr);
-        assert!(parsed.is_err(), "Address should be invalid: {}", addr);
+        assert!(parsed.is_err(), "Address should be invalid: {addr}");
     }
 
     /// Assert that two addresses are equal (case-insensitive)
@@ -25,8 +25,7 @@ pub mod address_assertions {
         let parsed2 = parse_address(addr2).expect("Second address should be valid");
         assert_eq!(
             parsed1, parsed2,
-            "Addresses should be equal: {} vs {}",
-            addr1, addr2
+            "Addresses should be equal: {addr1} vs {addr2}"
         );
     }
 
@@ -43,15 +42,13 @@ pub mod address_assertions {
 
 /// Custom assertions for gas price conversions and calculations
 pub mod gas_assertions {
-    use super::*;
 
     /// Assert gwei to wei conversion is correct
     pub fn assert_gwei_to_wei_conversion(gwei: f64, expected_wei: u64) {
         let actual_wei = (gwei * 1e9) as u64;
         assert_eq!(
             actual_wei, expected_wei,
-            "Gwei to Wei conversion failed: {} gwei should be {} wei, got {}",
-            gwei, expected_wei, actual_wei
+            "Gwei to Wei conversion failed: {gwei} gwei should be {expected_wei} wei, got {actual_wei}"
         );
     }
 
@@ -61,10 +58,7 @@ pub mod gas_assertions {
         let tolerance = 0.000001; // 1 wei tolerance
         assert!(
             (actual_gwei - expected_gwei).abs() < tolerance,
-            "Wei to Gwei conversion failed: {} wei should be {} gwei, got {}",
-            wei,
-            expected_gwei,
-            actual_gwei
+            "Wei to Gwei conversion failed: {wei} wei should be {expected_gwei} gwei, got {actual_gwei}"
         );
     }
 
@@ -74,16 +68,14 @@ pub mod gas_assertions {
         let tolerance = 0.1; // 0.1% tolerance
         assert!(
             (actual_efficiency - expected_efficiency).abs() < tolerance,
-            "Gas efficiency should be {}%, got {}%",
-            expected_efficiency,
-            actual_efficiency
+            "Gas efficiency should be {expected_efficiency}%, got {actual_efficiency}%"
         );
     }
 
     /// Assert that gas limit is reasonable (not too high or too low)
     pub fn assert_reasonable_gas_limit(gas_limit: u64) {
-        assert!(gas_limit >= 21_000, "Gas limit too low: {}", gas_limit);
-        assert!(gas_limit <= 30_000_000, "Gas limit too high: {}", gas_limit);
+        assert!(gas_limit >= 21_000, "Gas limit too low: {gas_limit}");
+        assert!(gas_limit <= 30_000_000, "Gas limit too high: {gas_limit}");
     }
 
     /// Assert that gas price is reasonable (in wei)
@@ -91,20 +83,17 @@ pub mod gas_assertions {
         let gas_price_gwei = gas_price_wei as f64 / 1e9;
         assert!(
             gas_price_gwei >= 1.0,
-            "Gas price too low: {} gwei",
-            gas_price_gwei
+            "Gas price too low: {gas_price_gwei} gwei"
         );
         assert!(
             gas_price_gwei <= 1000.0,
-            "Gas price too high: {} gwei",
-            gas_price_gwei
+            "Gas price too high: {gas_price_gwei} gwei"
         );
     }
 }
 
 /// Custom assertions for value scaling and calculations
 pub mod value_assertions {
-    use super::*;
 
     /// Assert that value scaling is correct
     pub fn assert_value_scaling(original_value: f64, decimals: u8, expected_scaled: i128) {
@@ -112,8 +101,7 @@ pub mod value_assertions {
         let actual_scaled = (original_value * multiplier as f64) as i128;
         assert_eq!(
             actual_scaled, expected_scaled,
-            "Value scaling failed: {} with {} decimals should be {}, got {}",
-            original_value, decimals, expected_scaled, actual_scaled
+            "Value scaling failed: {original_value} with {decimals} decimals should be {expected_scaled}, got {actual_scaled}"
         );
     }
 
@@ -126,9 +114,7 @@ pub mod value_assertions {
         let deviation = ((new_value - old_value) / old_value * 100.0).abs();
         assert!(
             deviation <= max_deviation_percent,
-            "Deviation {}% exceeds maximum {}%",
-            deviation,
-            max_deviation_percent
+            "Deviation {deviation}% exceeds maximum {max_deviation_percent}%"
         );
     }
 
@@ -136,10 +122,7 @@ pub mod value_assertions {
     pub fn assert_value_in_bounds(value: f64, min_value: f64, max_value: f64) {
         assert!(
             value >= min_value && value <= max_value,
-            "Value {} should be between {} and {}",
-            value,
-            min_value,
-            max_value
+            "Value {value} should be between {min_value} and {max_value}"
         );
     }
 
@@ -147,17 +130,14 @@ pub mod value_assertions {
     pub fn assert_float_approx_eq(actual: f64, expected: f64, tolerance: f64) {
         assert!(
             (actual - expected).abs() <= tolerance,
-            "Values not approximately equal: expected {}, got {}, tolerance {}",
-            expected,
-            actual,
-            tolerance
+            "Values not approximately equal: expected {expected}, got {actual}, tolerance {tolerance}"
         );
     }
 }
 
 /// Custom assertions for timestamp and time-related values
 pub mod time_assertions {
-    use super::*;
+
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// Assert that a timestamp is recent (within last minute)
@@ -169,8 +149,7 @@ pub mod time_assertions {
         let age = now.saturating_sub(timestamp);
         assert!(
             age <= 60,
-            "Timestamp should be recent, but is {} seconds old",
-            age
+            "Timestamp should be recent, but is {age} seconds old"
         );
     }
 
@@ -183,10 +162,7 @@ pub mod time_assertions {
         let age = now.saturating_sub(timestamp);
         assert!(
             age >= min_age_secs && age <= max_age_secs,
-            "Timestamp age {} should be between {} and {} seconds",
-            age,
-            min_age_secs,
-            max_age_secs
+            "Timestamp age {age} should be between {min_age_secs} and {max_age_secs} seconds"
         );
     }
 
@@ -195,9 +171,7 @@ pub mod time_assertions {
         let diff = timestamp1.abs_diff(timestamp2);
         assert!(
             diff <= max_diff_secs,
-            "Timestamps should be within {} seconds of each other, but differ by {}",
-            max_diff_secs,
-            diff
+            "Timestamps should be within {max_diff_secs} seconds of each other, but differ by {diff}"
         );
     }
 
@@ -213,16 +187,14 @@ pub mod time_assertions {
         // Allow up to 1 hour in the future for clock skew
         assert!(
             timestamp <= now + 3600,
-            "Timestamp {} should not be more than 1 hour in the future (now: {})",
-            timestamp,
-            now
+            "Timestamp {timestamp} should not be more than 1 hour in the future (now: {now})"
         );
     }
 }
 
 /// Custom assertions for network and transaction validation
 pub mod transaction_assertions {
-    use super::*;
+
     use alloy::primitives::TxHash;
 
     /// Assert that a transaction hash is valid (non-zero)
@@ -239,8 +211,7 @@ pub mod transaction_assertions {
     pub fn assert_transaction_failed(status: &str) {
         assert!(
             status == "failed" || status == "reverted",
-            "Transaction should be failed or reverted, got: {}",
-            status
+            "Transaction should be failed or reverted, got: {status}"
         );
     }
 
@@ -250,43 +221,34 @@ pub mod transaction_assertions {
         // Allow up to 50M blocks (very generous upper bound)
         assert!(
             block_number < 50_000_000,
-            "Block number seems unreasonably high: {}",
-            block_number
+            "Block number seems unreasonably high: {block_number}"
         );
     }
 }
 
 /// Custom assertions for configuration validation
 pub mod config_assertions {
-    use super::*;
 
     /// Assert that a network name is valid
     pub fn assert_valid_network_name(name: &str) {
         assert!(!name.is_empty(), "Network name should not be empty");
         assert!(
             name.len() <= 50,
-            "Network name should not be too long: {}",
-            name
+            "Network name should not be too long: {name}"
         );
         assert!(
             name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'),
-            "Network name should only contain alphanumeric characters, hyphens, and underscores: {}",
-            name
+            "Network name should only contain alphanumeric characters, hyphens, and underscores: {name}"
         );
     }
 
     /// Assert that a feed name is valid
     pub fn assert_valid_feed_name(name: &str) {
         assert!(!name.is_empty(), "Feed name should not be empty");
-        assert!(
-            name.len() <= 50,
-            "Feed name should not be too long: {}",
-            name
-        );
+        assert!(name.len() <= 50, "Feed name should not be too long: {name}");
         assert!(
             name.chars().all(|c| c.is_alphanumeric() || c == '_'),
-            "Feed name should only contain alphanumeric characters and underscores: {}",
-            name
+            "Feed name should only contain alphanumeric characters and underscores: {name}"
         );
     }
 
@@ -298,8 +260,7 @@ pub mod config_assertions {
                 || url.starts_with("https://")
                 || url.starts_with("ws://")
                 || url.starts_with("wss://"),
-            "URL should have a valid scheme: {}",
-            url
+            "URL should have a valid scheme: {url}"
         );
     }
 }
