@@ -1,6 +1,41 @@
 # Prometheus Metrics Guide
 
-Omikuji exports comprehensive metrics for monitoring via Prometheus at `http://localhost:9090/metrics`.
+Omikuji exports comprehensive metrics for monitoring via Prometheus. By default, metrics are exposed at `http://localhost:9090/metrics`, but the port is configurable.
+
+## Configuration
+
+The metrics server can be configured in your `config.yaml` file:
+
+```yaml
+# Basic configuration
+metrics:
+  enabled: true     # Enable/disable metrics collection (default: true)
+  port: 9090       # Metrics server port (default: 9090)
+
+# Custom port example
+metrics:
+  port: 8080       # Use port 8080 instead of default 9090
+
+# Disable metrics
+metrics:
+  enabled: false   # Metrics server will not start
+```
+
+### Port Configuration
+
+- **Default Port**: 9090
+- **Custom Port**: Set any available port in the configuration
+- **Port Conflicts**: If the specified port is already in use, Omikuji will:
+  - Log an error: "Failed to start metrics server: {error}"
+  - Continue running without metrics
+  - Set internal status to indicate metrics are unavailable
+
+### Runtime Behavior
+
+- The metrics endpoint is available at: `http://0.0.0.0:{port}/metrics`
+- The server starts automatically when Omikuji launches
+- No command-line flag or environment variable override is currently available
+- Port changes require restarting Omikuji
 
 ## Available Metrics
 
@@ -304,7 +339,8 @@ Here's a sample Grafana dashboard configuration:
 
 3. **Troubleshooting**
    - If metrics are missing, check the logs for errors
-   - Ensure the metrics server started successfully on port 9090
+   - Ensure the metrics server started successfully on the configured port
+   - Check if the port is already in use by another process
    - Verify network connectivity for wallet balance queries
 
 ## Integration with Monitoring Stack
@@ -314,7 +350,7 @@ Here's a sample Grafana dashboard configuration:
    scrape_configs:
      - job_name: 'omikuji'
        static_configs:
-         - targets: ['localhost:9090']
+         - targets: ['localhost:9090']  # Update port if using custom configuration
        scrape_interval: 15s
    ```
 

@@ -515,6 +515,82 @@ scheduled_tasks:
       gas_limit: 300000
 ```
 
+## Metrics Section
+
+Configure Prometheus metrics collection and export.
+
+```yaml
+metrics:
+  enabled: <boolean>           # Optional: Enable metrics collection (default: true)
+  port: <number>              # Optional: Prometheus metrics port (default: 9090)
+  detailed_metrics: <boolean> # Optional: Enable high-cardinality metrics (default: false)
+  categories:                 # Optional: Toggle specific metric categories
+    datasource: <boolean>     # Data source health metrics (default: true)
+    update_decisions: <boolean> # Update decision metrics (default: true)
+    network: <boolean>        # Network/RPC metrics (default: true)
+    contract: <boolean>       # Contract interaction metrics (default: true)
+    quality: <boolean>        # Data quality metrics (default: true, requires detailed_metrics)
+    economic: <boolean>       # Economic/cost metrics (default: true)
+    performance: <boolean>    # Performance metrics (default: true, requires detailed_metrics)
+    config: <boolean>         # Configuration info metrics (default: true)
+    alerts: <boolean>         # Alert-worthy metrics (default: true)
+```
+
+### Metrics Fields
+
+#### `enabled` (optional)
+- Type: `boolean`
+- Default: `true`
+- Description: Master switch for metrics collection. When false, no metrics are collected or exposed.
+
+#### `port` (optional)
+- Type: `number`
+- Default: `9090`
+- Description: TCP port for the Prometheus metrics endpoint
+- Note: If the port is already in use, Omikuji will log an error and continue without metrics
+
+#### `detailed_metrics` (optional)
+- Type: `boolean`
+- Default: `false`
+- Description: Enable collection of high-cardinality metrics (quality and performance categories)
+- Warning: May increase memory usage and metrics storage requirements
+
+#### `categories` (optional)
+- Type: `object`
+- Description: Fine-grained control over which metric categories to collect
+- Note: All categories default to `true` except quality and performance which also require `detailed_metrics`
+
+### Example Metrics Configuration
+
+```yaml
+# Basic configuration with custom port
+metrics:
+  port: 8080
+
+# Disable metrics entirely
+metrics:
+  enabled: false
+
+# Enable detailed metrics for debugging
+metrics:
+  port: 9090
+  detailed_metrics: true
+
+# Selective metric categories
+metrics:
+  port: 9090
+  categories:
+    datasource: true
+    update_decisions: true
+    network: false      # Disable network metrics
+    contract: true
+    quality: false      # Disable quality metrics
+    economic: true
+    performance: false  # Disable performance metrics
+    config: true
+    alerts: true
+```
+
 ## Validation Rules
 
 1. **Unique Names**: All network, datafeed, and scheduled task names must be unique
