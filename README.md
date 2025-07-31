@@ -180,11 +180,13 @@ cargo test
   - -h, --help: Display help information
 
   **Key Management Commands:**
-  - `omikuji key import`: Import a private key to the OS keyring
+  - `omikuji key import`: Import a private key to the configured storage backend
   - `omikuji key export`: Export a private key (with confirmation)
-  - `omikuji key remove`: Remove a private key from keyring
+  - `omikuji key remove`: Remove a private key from storage
   - `omikuji key list`: List available keys
-  - `omikuji key migrate`: Migrate keys from environment variables to keyring
+  - `omikuji key migrate`: Migrate keys from environment variables to configured storage
+  
+  Note: Key commands now respect your configured storage backend (keyring, vault, aws-secrets, or env)
 
 ## 📊 Technical Specifications
 

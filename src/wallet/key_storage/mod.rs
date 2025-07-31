@@ -4,6 +4,7 @@ use secrecy::SecretString;
 
 pub mod aws_secrets;
 pub mod env;
+pub mod factory;
 pub mod keyring;
 #[cfg(test)]
 mod tests;
@@ -11,6 +12,7 @@ pub mod vault;
 
 pub use aws_secrets::AwsSecretsStorage;
 pub use env::EnvVarStorage;
+pub use factory::create_key_storage;
 pub use keyring::KeyringStorage;
 pub use vault::VaultStorage;
 

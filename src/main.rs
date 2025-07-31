@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 mod cli;
 
 use cli::{Cli, Commands};
-use omikuji::wallet::KeyStorage;
+use omikuji::wallet::key_storage::create_key_storage;
 use omikuji::{config, database, datafeed, gas_price, metrics, network, scheduled_tasks, ui};
 
 #[tokio::main]
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         Some(Commands::Key { command }) => {
             // Initialize minimal logging for key commands
             tracing_subscriber::fmt::init();
-            return cli::handle_key_command(command.clone()).await;
+            return cli::handle_key_command(command.clone(), cli.config.clone()).await;
         }
         Some(Commands::Run) | None => {
             // Continue with normal daemon operation
@@ -104,76 +104,9 @@ async fn main() -> Result<()> {
     };
 
     // Load wallets based on key storage configuration
-    use omikuji::wallet::key_storage::{
-        AwsSecretsStorage, EnvVarStorage, KeyringStorage, VaultStorage,
-    };
-
-    let key_storage: Box<dyn KeyStorage> = match config.key_storage.storage_type.as_str() {
-        "keyring" => {
-            info!("Using OS keyring for key storage");
-            Box::new(KeyringStorage::new(Some(
-                config.key_storage.keyring.service.clone(),
-            )))
-        }
-        "env" => {
-            info!("Using environment variables for key storage (consider migrating to vault/aws-secrets for production)");
-            Box::new(EnvVarStorage::new())
-        }
-        "vault" => {
-            info!("Using HashiCorp Vault for key storage");
-            let vault_config = &config.key_storage.vault;
-
-            // Handle token from environment variable if specified
-            let token = vault_config.token.as_ref().and_then(|t| {
-                if t.starts_with("${") && t.ends_with("}") {
-                    let var_name = &t[2..t.len() - 1];
-                    std::env::var(var_name).ok()
-                } else {
-                    Some(t.clone())
-                }
-            });
-
-            let vault_storage = VaultStorage::new(
-                &vault_config.url,
-                &vault_config.mount_path,
-                &vault_config.path_prefix,
-                &vault_config.auth_method,
-                token,
-                Some(vault_config.cache_ttl_seconds),
-            )
-            .await
-            .context("Failed to initialize Vault storage")?;
-
-            // Start cache cleanup task
-            vault_storage.start_cache_cleanup().await;
-
-            Box::new(vault_storage)
-        }
-        "aws-secrets" => {
-            info!("Using AWS Secrets Manager for key storage");
-            let aws_config = &config.key_storage.aws_secrets;
-
-            let aws_storage = AwsSecretsStorage::new(
-                aws_config.region.clone(),
-                &aws_config.prefix,
-                Some(aws_config.cache_ttl_seconds),
-            )
-            .await
-            .context("Failed to initialize AWS Secrets Manager storage")?;
-
-            // Start cache cleanup task
-            aws_storage.start_cache_cleanup().await;
-
-            Box::new(aws_storage)
-        }
-        _ => {
-            error!(
-                "Unknown key storage type: {}",
-                config.key_storage.storage_type
-            );
-            return Err(anyhow::anyhow!("Invalid key storage configuration"));
-        }
-    };
+    let key_storage = create_key_storage(&config)
+        .await
+        .context("Failed to initialize key storage")?;
 
     for network in &config.networks {
         match network_manager
@@ -432,7 +365,10 @@ async fn main() -> Result<()> {
         error!("Failed to start metrics server: {}", e);
         error!("Continuing without metrics endpoint");
     } else {
-        info!("Prometheus metrics available at http://0.0.0.0:{}/metrics", config.metrics.port);
+        info!(
+            "Prometheus metrics available at http://0.0.0.0:{}/metrics",
+            config.metrics.port
+        );
 
         // Update metrics server status
         ConfigMetrics::set_metrics_server_status(true, config.metrics.port);

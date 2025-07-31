@@ -23,6 +23,22 @@ test:
 test-verbose:
 	cargo test -- --nocapture
 
+# Test database setup
+test-db-setup:
+	@./scripts/setup-test-db.sh
+
+# Run tests with test database
+test-with-db: test-db-setup
+	@DATABASE_URL="postgresql://omikuji:omikuji_password@localhost:5433/omikuji_test" cargo test
+
+# Run specific test with database
+test-one-with-db: test-db-setup
+	@DATABASE_URL="postgresql://omikuji:omikuji_password@localhost:5433/omikuji_test" cargo test $(TEST)
+
+# Run tests using the test runner script
+test-db:
+	@./scripts/run-tests.sh
+
 # Clean build artifacts
 clean:
 	cargo clean
@@ -186,6 +202,9 @@ help:
 	@echo "  make run-config   - Run with config.yaml"
 	@echo "  make test         - Run all tests"
 	@echo "  make test-verbose - Run tests with output"
+	@echo "  make test-db      - Run tests with fresh test database"
+	@echo "  make test-with-db - Run all tests with test database"
+	@echo "  make test-one-with-db TEST=name - Run specific test with database"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make fmt          - Format code"
 	@echo "  make fmt-check    - Check code formatting"

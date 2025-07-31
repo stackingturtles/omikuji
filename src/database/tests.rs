@@ -98,7 +98,7 @@ mod tests {
     async fn test_establish_connection_no_database_url() {
         // Save current DATABASE_URL if it exists
         let saved_url = std::env::var("DATABASE_URL").ok();
-        
+
         // Ensure DATABASE_URL is not set
         mock_db::cleanup_test_db_url();
 
@@ -112,7 +112,7 @@ mod tests {
             "Expected error about DATABASE_URL not set, got: {}",
             err
         );
-        
+
         // Restore DATABASE_URL if it was set
         if let Some(url) = saved_url {
             std::env::set_var("DATABASE_URL", url);
@@ -123,7 +123,7 @@ mod tests {
     async fn test_establish_connection_invalid_url() {
         // Save current DATABASE_URL if it exists
         let saved_url = std::env::var("DATABASE_URL").ok();
-        
+
         // Set an invalid database URL
         std::env::set_var("DATABASE_URL", "invalid://url");
 

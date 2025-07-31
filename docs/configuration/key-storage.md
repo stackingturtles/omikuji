@@ -455,6 +455,27 @@ omikuji_key_cache_hits_total{backend="vault"} 150
 omikuji_key_cache_misses_total{backend="vault"} 10
 ```
 
+## CLI Key Management
+
+### Using Alternative Storage Backends
+
+Starting with version 0.4.0, the CLI key commands respect your configured storage backend. Simply specify your configuration file:
+
+```bash
+# Export a key from Vault
+omikuji -c config.yaml key export --network ethereum-mainnet
+
+# Import a key to AWS Secrets Manager
+omikuji -c config.yaml key import --network ethereum-mainnet
+
+# List keys from configured backend
+omikuji -c config.yaml key list
+```
+
+If no configuration file is specified, the CLI will:
+1. Check for a config file in the default location (`~/.omikuji/config.yaml`)
+2. Fall back to OS keyring if no configuration is found (backward compatibility)
+
 ## Summary
 
 Choose your key storage backend based on your deployment environment:
