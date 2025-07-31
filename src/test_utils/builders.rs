@@ -68,6 +68,7 @@ impl NetworkBuilder {
             gas_config: self.gas_config,
             gas_token: self.gas_token,
             gas_token_symbol: self.gas_token_symbol,
+            balance_alerts: None,
             rpc_url: None,
             ws_url: None,
         }

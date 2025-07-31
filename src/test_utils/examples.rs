@@ -20,6 +20,7 @@ mod examples {
             gas_config: Default::default(),
             gas_token: "ethereum".to_string(),
             gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
             rpc_url: None,
             ws_url: None,
         };

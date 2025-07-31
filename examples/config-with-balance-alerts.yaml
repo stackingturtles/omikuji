@@ -1,0 +1,60 @@
+networks:
+  # Ethereum mainnet with high balance thresholds
+  - name: ethereum-mainnet
+    nodes:
+      - name: Llamanodes
+        rpc_url: https://eth.llamarpc.com
+    transaction_type: eip1559
+    gas_token: ethereum
+    gas_token_symbol: ETH
+    # High thresholds for expensive mainnet
+    balance_alerts:
+      critical_threshold_usd: 100.0   # Alert when balance < $100
+      warning_threshold_usd: 500.0    # Alert when balance < $500
+      info_threshold_usd: 1000.0      # Alert when balance < $1000
+    
+  # BSC with moderate thresholds
+  - name: bsc-mainnet
+    nodes:
+      - name: BSC Public RPC
+        rpc_url: https://bsc-dataseed.binance.org/
+    gas_token: binancecoin
+    gas_token_symbol: BNB
+    # Moderate thresholds for BSC
+    balance_alerts:
+      critical_threshold_usd: 10.0    # Alert when balance < $10
+      warning_threshold_usd: 50.0     # Alert when balance < $50
+      info_threshold_usd: 100.0       # Alert when balance < $100
+    
+  # Polygon with low thresholds (cheap gas)
+  - name: polygon-mainnet
+    nodes:
+      - name: Polygon RPC
+        rpc_url: https://polygon-rpc.com
+    gas_token: matic-network
+    gas_token_symbol: MATIC
+    # Low thresholds for cheap L2
+    balance_alerts:
+      critical_threshold_usd: 5.0     # Alert when balance < $5
+      warning_threshold_usd: 20.0     # Alert when balance < $20
+      info_threshold_usd: 50.0        # Alert when balance < $50
+    
+  # Base network with no alerts configured
+  - name: base-mainnet
+    nodes:
+      - name: Base Public RPC
+        rpc_url: https://mainnet.base.org
+    gas_token: ethereum  # Base uses ETH for gas
+    gas_token_symbol: ETH
+    # No balance_alerts section = no alerts will be logged
+
+datafeeds:
+  - name: eth_usd
+    networks: ethereum-mainnet
+    check_frequency: 60
+    contract_address: 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419
+    contract_type: fluxmon
+    minimum_update_frequency: 3600
+    deviation_threshold_pct: 0.5
+    feed_url: https://min-api.cryptocompare.com/data/pricemultifull?fsyms=ETH&tsyms=USD
+    feed_json_path: RAW.ETH.USD.PRICE

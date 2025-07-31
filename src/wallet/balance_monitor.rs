@@ -104,12 +104,22 @@ impl WalletBalanceMonitor {
                     1.0 // Default price if no gas price manager
                 };
 
+                // Get network configuration to check for balance alert thresholds
+                let thresholds = if let Ok(network_config) =
+                    self.network_manager.get_network(network_name).await
+                {
+                    network_config.balance_alerts.as_ref()
+                } else {
+                    None
+                };
+
                 // Update economic metrics
                 EconomicMetrics::update_wallet_balance_usd(
                     network_name,
                     &format!("{address:?}"),
                     balance_native,
                     native_token_price,
+                    thresholds,
                 );
 
                 // Update runway if we have spending data

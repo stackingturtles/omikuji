@@ -18,6 +18,12 @@ networks:
       
       # For manual overrides and advanced settings, see:
       # docs/gas-configuration.md#configuration-examples
+    
+    # Optional: Balance alert thresholds (no alerts if not configured)
+    # balance_alerts:
+    #   critical_threshold_usd: 10.0    # Alert when balance < $10
+    #   warning_threshold_usd: 50.0     # Alert when balance < $50
+    #   info_threshold_usd: 100.0       # Alert when balance < $100
 
 datafeeds:
   - name: eth_usd

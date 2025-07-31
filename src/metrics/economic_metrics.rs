@@ -5,6 +5,8 @@ use prometheus::{
 };
 use tracing::{debug, error, warn};
 
+use crate::config::models::BalanceAlertThresholds;
+
 lazy_static! {
     /// Cumulative gas costs in USD
     static ref CUMULATIVE_GAS_COST_USD: CounterVec = register_counter_vec!(
@@ -127,6 +129,7 @@ impl EconomicMetrics {
         address: &str,
         balance_native: f64,
         native_token_price: f64,
+        thresholds: Option<&BalanceAlertThresholds>,
     ) {
         let balance_usd = balance_native * native_token_price;
 
@@ -134,26 +137,34 @@ impl EconomicMetrics {
             .with_label_values(&[network, address])
             .set(balance_usd);
 
-        // Check for low balance alerts
-        let (alert_status, severity) = if balance_usd < 10.0 {
-            (1.0, "critical")
-        } else if balance_usd < 50.0 {
-            (1.0, "warning")
-        } else if balance_usd < 100.0 {
-            (1.0, "info")
+        // Only check for alerts if thresholds are configured
+        if let Some(thresholds) = thresholds {
+            // Check for low balance alerts
+            let (alert_status, severity) = if balance_usd < thresholds.critical_threshold_usd {
+                (1.0, "critical")
+            } else if balance_usd < thresholds.warning_threshold_usd {
+                (1.0, "warning")
+            } else if balance_usd < thresholds.info_threshold_usd {
+                (1.0, "info")
+            } else {
+                (0.0, "ok")
+            };
+
+            LOW_BALANCE_ALERT
+                .with_label_values(&[network, address, severity])
+                .set(alert_status);
+
+            if alert_status > 0.0 {
+                error!(
+                    "Low balance alert for {} on {}: ${:.2} USD (severity: {})",
+                    address, network, balance_usd, severity
+                );
+            }
         } else {
-            (0.0, "ok")
-        };
-
-        LOW_BALANCE_ALERT
-            .with_label_values(&[network, address, severity])
-            .set(alert_status);
-
-        if alert_status > 0.0 {
-            error!(
-                "Low balance alert for {} on {}: ${:.2} USD (severity: {})",
-                address, network, balance_usd, severity
-            );
+            // Clear any existing alerts when thresholds are not configured
+            LOW_BALANCE_ALERT
+                .with_label_values(&[network, address, "ok"])
+                .set(0.0);
         }
     }
 

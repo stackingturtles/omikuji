@@ -36,6 +36,8 @@ networks:
     transaction_type: <string>  # Optional: "legacy" or "eip1559" (default: "eip1559")
     gas_config:                 # Optional: Gas configuration
       <gas_options>
+    balance_alerts:             # Optional: Wallet balance alert thresholds
+      <balance_alert_options>
 ```
 
 ### Network Fields
@@ -60,6 +62,42 @@ networks:
 - Type: `object`
 - Description: Gas configuration options
 - See [Gas Configuration Reference](#gas-configuration) below
+
+#### `balance_alerts` (optional)
+- Type: `object`
+- Description: Wallet balance alert thresholds in USD
+- Default: No alerts (if not configured)
+- Fields:
+  - `critical_threshold_usd`: Critical alert threshold (lowest balance)
+  - `warning_threshold_usd`: Warning alert threshold
+  - `info_threshold_usd`: Info alert threshold
+
+### Network Configuration Examples
+
+```yaml
+networks:
+  # Ethereum mainnet with high balance thresholds
+  - name: ethereum
+    rpc_url: https://eth.llamarpc.com
+    transaction_type: eip1559
+    balance_alerts:
+      critical_threshold_usd: 100.0   # Alert when balance < $100
+      warning_threshold_usd: 500.0    # Alert when balance < $500
+      info_threshold_usd: 1000.0      # Alert when balance < $1000
+    
+  # Polygon with lower thresholds (cheaper gas)
+  - name: polygon
+    rpc_url: https://polygon-rpc.com
+    balance_alerts:
+      critical_threshold_usd: 5.0     # Alert when balance < $5
+      warning_threshold_usd: 20.0     # Alert when balance < $20
+      info_threshold_usd: 50.0        # Alert when balance < $50
+    
+  # Base network with no alerts configured
+  - name: base
+    rpc_url: https://base-mainnet.public.blastapi.io
+    # No balance_alerts section means no alerts will be logged
+```
 
 ## Datafeeds Section
 

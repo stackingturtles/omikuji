@@ -245,6 +245,22 @@ pub struct NetworkNode {
     pub ws_url: Option<String>,
 }
 
+/// Balance alert thresholds for network-specific monitoring
+#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+pub struct BalanceAlertThresholds {
+    /// Critical alert threshold in USD (lowest level)
+    #[validate(range(min = 0.0))]
+    pub critical_threshold_usd: f64,
+
+    /// Warning alert threshold in USD (medium level)
+    #[validate(range(min = 0.0))]
+    pub warning_threshold_usd: f64,
+
+    /// Info alert threshold in USD (highest level)
+    #[validate(range(min = 0.0))]
+    pub info_threshold_usd: f64,
+}
+
 /// Configuration for a blockchain network
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct Network {
@@ -274,6 +290,11 @@ pub struct Network {
     #[serde(default = "default_gas_token_symbol")]
     pub gas_token_symbol: String,
 
+    /// Balance alert thresholds (optional - no alerts if not configured)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate]
+    pub balance_alerts: Option<BalanceAlertThresholds>,
+
     /// Legacy fields for backward compatibility (deprecated)
     #[serde(skip_serializing, skip_deserializing)]
     pub rpc_url: Option<String>,
@@ -295,6 +316,7 @@ impl Default for Network {
             gas_config: GasConfig::default(),
             gas_token: default_gas_token(),
             gas_token_symbol: default_gas_token_symbol(),
+            balance_alerts: None,
             rpc_url: None,
             ws_url: None,
         }
