@@ -26,9 +26,11 @@ pub struct WsProviderManager {
 impl WsProviderManager {
     /// Create a new WebSocket provider manager
     pub fn new(ws_url: String) -> Self {
-        let mut backoff = ExponentialBackoff::default();
-        backoff.max_elapsed_time = None; // Keep retrying indefinitely
-        backoff.max_interval = Duration::from_secs(60); // Max 1 minute between retries
+        let backoff = ExponentialBackoff {
+            max_elapsed_time: None,                // Keep retrying indefinitely
+            max_interval: Duration::from_secs(60), // Max 1 minute between retries
+            ..ExponentialBackoff::default()
+        };
 
         Self {
             url: ws_url,
@@ -135,12 +137,18 @@ pub struct WsConnectionPool {
     connections: Arc<RwLock<std::collections::HashMap<String, Arc<WsProviderManager>>>>,
 }
 
-impl WsConnectionPool {
-    /// Create a new connection pool
-    pub fn new() -> Self {
+impl Default for WsConnectionPool {
+    fn default() -> Self {
         Self {
             connections: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
+    }
+}
+
+impl WsConnectionPool {
+    /// Create a new connection pool
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Get or create a WebSocket provider for a given URL

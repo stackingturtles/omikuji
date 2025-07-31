@@ -152,9 +152,9 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
                     serde_yaml::Value::String("nodes".to_string()),
                     serde_yaml::Value::Sequence(nodes),
                 );
-                network_map.remove(&serde_yaml::Value::String("rpc_url".to_string()));
-                network_map.remove(&serde_yaml::Value::String("ws_url".to_string()));
-                network_map.remove(&serde_yaml::Value::String("url".to_string()));
+                network_map.remove(serde_yaml::Value::String("rpc_url".to_string()));
+                network_map.remove(serde_yaml::Value::String("ws_url".to_string()));
+                network_map.remove(serde_yaml::Value::String("url".to_string()));
                 // Also handle 'url' field
             }
         }
@@ -181,7 +181,7 @@ fn apply_network_backward_compatibility(network: &mut serde_yaml::Value) {
                     serde_yaml::Value::String("nodes".to_string()),
                     serde_yaml::Value::Sequence(nodes),
                 );
-                network_map.remove(&serde_yaml::Value::String("url".to_string()));
+                network_map.remove(serde_yaml::Value::String("url".to_string()));
             }
         }
     }

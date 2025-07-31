@@ -562,12 +562,7 @@ impl EventListener {
                 .split(',')
                 .map(|param| {
                     // Each param can be "type" or "type name" - we want only the type
-                    param
-                        .trim()
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("")
-                        .to_string()
+                    param.split_whitespace().next().unwrap_or("").to_string()
                 })
                 .collect()
         };
@@ -727,7 +722,7 @@ impl EventListener {
                     .collect();
 
                 // Convert data to Bytes
-                let data_bytes = Bytes::from(log.data().data.clone());
+                let data_bytes = log.data().data.clone();
 
                 // Decode the event
                 match EventAbiDecoder::decode_event(

@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use secrecy::SecretString;
 use std::path::PathBuf;
 
-use omikuji::wallet::key_storage::{KeyStorage, KeyringStorage};
+use omikuji::config::{default_config_path, load_config};
+use omikuji::wallet::key_storage::{create_key_storage, KeyStorage, KeyringStorage};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -92,18 +93,51 @@ pub enum KeyCommands {
     },
 }
 
-pub async fn handle_key_command(command: KeyCommands) -> Result<()> {
+pub async fn handle_key_command(command: KeyCommands, config_path: Option<PathBuf>) -> Result<()> {
     match command {
         KeyCommands::Import {
             network,
             key,
             file,
             service,
-        } => import_key(network, key, file, service).await,
-        KeyCommands::List { service } => list_keys(service).await,
-        KeyCommands::Remove { network, service } => remove_key(network, service).await,
-        KeyCommands::Export { network, service } => export_key(network, service).await,
-        KeyCommands::Migrate { service } => migrate_keys(service).await,
+        } => import_key(network, key, file, service, config_path).await,
+        KeyCommands::List { service } => list_keys(service, config_path).await,
+        KeyCommands::Remove { network, service } => remove_key(network, service, config_path).await,
+        KeyCommands::Export { network, service } => export_key(network, service, config_path).await,
+        KeyCommands::Migrate { service } => migrate_keys(service, config_path).await,
+    }
+}
+
+/// Gets the configured storage backend, or falls back to keyring for backward compatibility
+async fn get_configured_storage(
+    config_path: Option<PathBuf>,
+    service: Option<String>,
+) -> Result<Box<dyn KeyStorage>> {
+    // Try to load configuration
+    let config = if let Some(path) = config_path {
+        match load_config(path) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                // If config is explicitly provided but fails to load, that's an error
+                return Err(anyhow!("Failed to load configuration: {}", e));
+            }
+        }
+    } else {
+        // Try to load from default location
+        let default_path = default_config_path();
+        if default_path.exists() {
+            load_config(default_path).ok()
+        } else {
+            None
+        }
+    };
+
+    // If we have a config, use the configured storage
+    if let Some(config) = config {
+        create_key_storage(&config).await
+    } else {
+        // Fall back to keyring for backward compatibility
+        Ok(Box::new(KeyringStorage::new(service)))
     }
 }
 
@@ -112,10 +146,9 @@ async fn import_key(
     key: Option<String>,
     file: Option<PathBuf>,
     service: Option<String>,
+    config_path: Option<PathBuf>,
 ) -> Result<()> {
-    // Note: CLI key commands use OS keyring by default.
-    // For Vault or AWS Secrets Manager, configure in omikuji.yaml and keys will be loaded automatically.
-    let storage = KeyringStorage::new(service);
+    let storage = get_configured_storage(config_path, service).await?;
 
     let private_key = match (key, file) {
         (Some(k), _) => SecretString::from(k),
@@ -145,22 +178,42 @@ async fn import_key(
     Ok(())
 }
 
-async fn list_keys(service: Option<String>) -> Result<()> {
-    // Note: CLI key commands use OS keyring by default.
-    let _storage = KeyringStorage::new(service);
+async fn list_keys(service: Option<String>, config_path: Option<PathBuf>) -> Result<()> {
+    let storage = get_configured_storage(config_path, service).await?;
 
-    // Since keyring doesn't support listing, we'll need to check common networks
-    // or read from a config file
-    println!("Note: The keyring crate doesn't support listing all keys directly.");
-    println!("To list keys, check your configuration file for configured networks.");
-    println!("You can then use 'omikuji key export' to verify if a key exists for a network.");
+    // Try to list keys if the storage backend supports it
+    match storage.list_keys().await {
+        Ok(keys) => {
+            if keys.is_empty() {
+                println!("No keys found.");
+            } else {
+                println!("Found keys for networks:");
+                for key in keys {
+                    println!("  - {}", key);
+                }
+            }
+        }
+        Err(_) => {
+            // Fall back to the original message for backends that don't support listing
+            println!(
+                "Note: The current storage backend doesn't support listing all keys directly."
+            );
+            println!("To list keys, check your configuration file for configured networks.");
+            println!(
+                "You can then use 'omikuji key export' to verify if a key exists for a network."
+            );
+        }
+    }
 
     Ok(())
 }
 
-async fn remove_key(network: String, service: Option<String>) -> Result<()> {
-    // Note: CLI key commands use OS keyring by default.
-    let storage = KeyringStorage::new(service);
+async fn remove_key(
+    network: String,
+    service: Option<String>,
+    config_path: Option<PathBuf>,
+) -> Result<()> {
+    let storage = get_configured_storage(config_path, service).await?;
 
     // Confirm removal
     println!("Are you sure you want to remove the key for network '{network}'? (y/N): ");
@@ -178,9 +231,12 @@ async fn remove_key(network: String, service: Option<String>) -> Result<()> {
     Ok(())
 }
 
-async fn export_key(network: String, service: Option<String>) -> Result<()> {
-    // Note: CLI key commands use OS keyring by default.
-    let storage = KeyringStorage::new(service);
+async fn export_key(
+    network: String,
+    service: Option<String>,
+    config_path: Option<PathBuf>,
+) -> Result<()> {
+    let storage = get_configured_storage(config_path, service).await?;
 
     // Confirm export
     println!("WARNING: This will display your private key!");
@@ -203,11 +259,11 @@ async fn export_key(network: String, service: Option<String>) -> Result<()> {
     Ok(())
 }
 
-async fn migrate_keys(service: Option<String>) -> Result<()> {
+async fn migrate_keys(service: Option<String>, config_path: Option<PathBuf>) -> Result<()> {
     use omikuji::wallet::key_storage::{EnvVarStorage, KeyStorage};
 
     let env_storage = EnvVarStorage::new();
-    let keyring_storage = KeyringStorage::new(service);
+    let target_storage = get_configured_storage(config_path, service).await?;
 
     let networks = env_storage.list_keys().await?;
 
@@ -217,11 +273,11 @@ async fn migrate_keys(service: Option<String>) -> Result<()> {
     }
 
     println!("Found keys for networks: {networks:?}");
-    println!("Migrating keys from environment variables to keyring...");
+    println!("Migrating keys from environment variables to configured storage...");
 
     for network in networks {
         match env_storage.get_key(&network).await {
-            Ok(key) => match keyring_storage.store_key(&network, key).await {
+            Ok(key) => match target_storage.store_key(&network, key).await {
                 Ok(_) => println!("✓ Migrated key for network '{network}'"),
                 Err(e) => println!("✗ Failed to migrate key for network '{network}': {e}"),
             },
