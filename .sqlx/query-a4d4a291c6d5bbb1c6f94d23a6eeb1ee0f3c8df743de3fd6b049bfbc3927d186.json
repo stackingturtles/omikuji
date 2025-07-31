@@ -1,0 +1,118 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT * FROM omikuji.contract_executions\n            WHERE transaction_hash = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "monitor_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "network",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "transaction_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "contract_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "function_selector",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "call_data",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "value_wei",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "gas_limit",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "gas_price_wei",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "gas_used",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "error_message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "trigger_event_tx_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "trigger_event_log_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a4d4a291c6d5bbb1c6f94d23a6eeb1ee0f3c8df743de3fd6b049bfbc3927d186"
+}

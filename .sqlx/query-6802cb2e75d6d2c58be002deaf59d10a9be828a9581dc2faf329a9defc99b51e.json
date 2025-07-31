@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                id,\n                transaction_hash,\n                log_index,\n                contract_address,\n                event_type,\n                processed_at AT TIME ZONE 'UTC' as \"processed_at!\",\n                event_data\n            FROM omikuji.processed_events\n            WHERE contract_address = $1\n            ORDER BY processed_at DESC\n            LIMIT $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "transaction_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "log_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "contract_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "processed_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "event_data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "6802cb2e75d6d2c58be002deaf59d10a9be828a9581dc2faf329a9defc99b51e"
+}

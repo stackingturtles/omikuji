@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE omikuji.contract_executions\n            SET status = $2,\n                gas_used = $3,\n                error_message = $4,\n                updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Varchar",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0af6a4a835e02441205e534fb2db54255e2c9806a12b1b09218e88375679b2c"
+}

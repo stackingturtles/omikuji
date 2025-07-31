@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO omikuji.processed_events (\n                transaction_hash, log_index, contract_address, \n                event_type, event_data\n            )\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (transaction_hash, log_index) DO NOTHING\n            RETURNING \n                id,\n                transaction_hash,\n                log_index,\n                contract_address,\n                event_type,\n                processed_at AT TIME ZONE 'UTC' as \"processed_at!\",\n                event_data\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "transaction_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "log_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "contract_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "processed_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "event_data",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int4",
+        "Varchar",
+        "Varchar",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "ca19af741ebbb7bfb919745360fb02d3be1b5bf30c0684af54cbd33a588414ad"
+}

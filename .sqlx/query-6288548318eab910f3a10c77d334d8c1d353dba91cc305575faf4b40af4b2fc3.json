@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM omikuji.processed_events\n            WHERE processed_at < NOW() - INTERVAL '1 day' * $1::int\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6288548318eab910f3a10c77d334d8c1d353dba91cc305575faf4b40af4b2fc3"
+}

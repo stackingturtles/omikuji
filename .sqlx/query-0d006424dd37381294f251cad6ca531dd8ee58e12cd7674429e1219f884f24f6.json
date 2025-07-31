@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                event_type,\n                COUNT(*) as count\n            FROM omikuji.processed_events\n            GROUP BY event_type\n            ORDER BY count DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "event_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "0d006424dd37381294f251cad6ca531dd8ee58e12cd7674429e1219f884f24f6"
+}

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT \n                COUNT(*)::BIGINT as total_executions,\n                COUNT(CASE WHEN status = 'success' THEN 1 END)::BIGINT as successful_executions,\n                COUNT(CASE WHEN status = 'failed' THEN 1 END)::BIGINT as failed_executions,\n                COUNT(CASE WHEN status = 'pending' THEN 1 END)::BIGINT as pending_executions,\n                COALESCE(SUM(CAST(value_wei AS NUMERIC)), 0)::TEXT as total_value_wei,\n                COALESCE(SUM(gas_used), 0)::BIGINT as total_gas_used\n            FROM omikuji.contract_executions\n            WHERE monitor_name = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total_executions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "successful_executions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "failed_executions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "pending_executions",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "total_value_wei",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "total_gas_used",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "3fb03474596e815235c36e84cde0120e730fd04f70e654e8916bdbfb7131baa9"
+}

@@ -39,6 +39,11 @@ test-one-with-db: test-db-setup
 test-db:
 	@./scripts/run-tests.sh
 
+# Regenerate SQLx query cache for offline builds
+sqlx-prepare:
+	DATABASE_URL="postgresql://omikuji:omikuji_password@localhost:5433/omikuji_db" cargo sqlx prepare
+	@echo "SQLx query cache updated. Remember to commit .sqlx/ directory"
+
 # Clean build artifacts
 clean:
 	cargo clean
@@ -88,7 +93,7 @@ ci-check:
 
 # Build optimized release version
 release:
-	cargo build --release
+	SQLX_OFFLINE=true cargo build --release
 
 # Run release version
 run-release:
@@ -205,6 +210,7 @@ help:
 	@echo "  make test-db      - Run tests with fresh test database"
 	@echo "  make test-with-db - Run all tests with test database"
 	@echo "  make test-one-with-db TEST=name - Run specific test with database"
+	@echo "  make sqlx-prepare - Regenerate SQLx query cache for offline builds"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make fmt          - Format code"
 	@echo "  make fmt-check    - Check code formatting"

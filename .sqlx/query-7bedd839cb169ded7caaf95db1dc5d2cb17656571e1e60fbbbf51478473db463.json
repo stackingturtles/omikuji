@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM omikuji.contract_executions\n            WHERE created_at < NOW() - INTERVAL '1 day' * $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7bedd839cb169ded7caaf95db1dc5d2cb17656571e1e60fbbbf51478473db463"
+}

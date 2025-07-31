@@ -226,6 +226,33 @@ mod tests {
 - Use `mockito` for HTTP mocking
 - Use `tempfile` for file system tests
 
+## Database and SQLx
+
+### Query Cache Management
+
+Omikuji uses SQLx for database interactions, which validates queries at compile time. To support building releases without database access, we maintain a query cache:
+
+1. **Regenerating Query Cache**: When you modify database queries, regenerate the cache:
+   ```bash
+   DATABASE_URL="postgresql://omikuji:omikuji_password@localhost:5433/omikuji_db" cargo sqlx prepare
+   ```
+
+2. **Committing Changes**: The `.sqlx` directory must be committed to version control
+   ```bash
+   git add .sqlx/
+   git commit -m "chore: Update SQLx query cache"
+   ```
+
+3. **Building Releases**: Release builds use offline mode automatically:
+   ```bash
+   make release  # Uses SQLX_OFFLINE=true
+   ```
+
+### Important Notes
+- Always regenerate the cache after modifying SQL queries
+- The cache ensures release builds work without database access
+- CI/CD can build releases without setting up a database
+
 ## Performance Considerations
 
 1. **Async/Await**: Use tokio for all I/O operations
