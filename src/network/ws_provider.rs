@@ -153,7 +153,7 @@ impl WsConnectionPool {
 
     /// Get or create a WebSocket provider for a given URL
     pub async fn get_provider(&self, network_name: &str, ws_url: &str) -> Result<Arc<WsProvider>> {
-        let key = format!("{}-{}", network_name, ws_url);
+        let key = format!("{network_name}-{ws_url}");
 
         // Check if we already have a manager for this URL
         {

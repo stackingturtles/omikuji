@@ -189,7 +189,7 @@ async fn list_keys(service: Option<String>, config_path: Option<PathBuf>) -> Res
             } else {
                 println!("Found keys for networks:");
                 for key in keys {
-                    println!("  - {}", key);
+                    println!("  - {key}");
                 }
             }
         }

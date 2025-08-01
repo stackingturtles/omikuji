@@ -537,19 +537,19 @@ impl EventListener {
         let event_name = signature
             .split('(')
             .next()
-            .ok_or_else(|| format!("Invalid event signature: '{}'", signature))?
+            .ok_or_else(|| format!("Invalid event signature: '{signature}'"))?
             .trim();
 
         // Extract parameters part
         let params_start = signature
             .find('(')
-            .ok_or_else(|| format!("Missing '(' in signature: '{}'", signature))?;
+            .ok_or_else(|| format!("Missing '(' in signature: '{signature}'"))?;
         let params_end = signature
             .rfind(')')
-            .ok_or_else(|| format!("Missing ')' in signature: '{}'", signature))?;
+            .ok_or_else(|| format!("Missing ')' in signature: '{signature}'"))?;
 
         if params_start >= params_end {
-            return Err(format!("Invalid parentheses in signature: '{}'", signature));
+            return Err(format!("Invalid parentheses in signature: '{signature}'"));
         }
 
         let params_str = &signature[params_start + 1..params_end];

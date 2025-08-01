@@ -107,7 +107,7 @@ impl TransactionExecutor {
             .get_provider(&context.network)
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Failed to get provider: {}", e),
+                reason: format!("Failed to get provider: {e}"),
             })?;
         let network_config = self
             .network_manager
@@ -115,7 +115,7 @@ impl TransactionExecutor {
             .await
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Failed to get network config: {}", e),
+                reason: format!("Failed to get network config: {e}"),
             })?;
 
         // Parse and validate value
@@ -132,14 +132,14 @@ impl TransactionExecutor {
         let max_value = U256::from_str_radix(&execution_limits.max_value_wei, 10).map_err(|e| {
             EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Invalid max_value_wei: {}", e),
+                reason: format!("Invalid max_value_wei: {e}"),
             }
         })?;
 
         if value > max_value {
             return Err(EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Value {} exceeds maximum {}", value, max_value),
+                reason: format!("Value {value} exceeds maximum {max_value}"),
             });
         }
 
@@ -184,7 +184,7 @@ impl TransactionExecutor {
                 .await
                 .map_err(|e| EventMonitorError::HandlerError {
                     monitor: monitor.name.clone(),
-                    reason: format!("Failed to get gas price: {}", e),
+                    reason: format!("Failed to get gas price: {e}"),
                 })?;
 
         let max_gas_price_wei =
@@ -206,7 +206,7 @@ impl TransactionExecutor {
             .await
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Failed to build transaction: {}", e),
+                reason: format!("Failed to build transaction: {e}"),
             })?;
 
         // Create signer provider
@@ -218,7 +218,7 @@ impl TransactionExecutor {
             .await
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Failed to send transaction: {}", e),
+                reason: format!("Failed to send transaction: {e}"),
             })?;
 
         let tx_hash = *pending_tx.tx_hash();
@@ -231,7 +231,7 @@ impl TransactionExecutor {
                 .await
                 .map_err(|e| EventMonitorError::HandlerError {
                     monitor: monitor.name.clone(),
-                    reason: format!("Failed to get receipt: {}", e),
+                    reason: format!("Failed to get receipt: {e}"),
                 })?;
 
         // Handle transaction result
@@ -252,7 +252,7 @@ impl TransactionExecutor {
             .await
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: monitor.name.clone(),
-                reason: format!("Failed to process transaction: {}", e),
+                reason: format!("Failed to process transaction: {e}"),
             })?;
 
         // Record execution in database
@@ -312,7 +312,7 @@ impl TransactionExecutor {
             .get_private_key(network_name)
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: network_name.to_string(),
-                reason: format!("Failed to get private key: {}", e),
+                reason: format!("Failed to get private key: {e}"),
             })?;
 
         let rpc_url = self
@@ -320,13 +320,13 @@ impl TransactionExecutor {
             .get_rpc_url(network_name)
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: network_name.to_string(),
-                reason: format!("Failed to get RPC URL: {}", e),
+                reason: format!("Failed to get RPC URL: {e}"),
             })?;
 
         let signer = private_key.parse::<PrivateKeySigner>().map_err(|e| {
             EventMonitorError::HandlerError {
                 monitor: network_name.to_string(),
-                reason: format!("Failed to parse private key: {}", e),
+                reason: format!("Failed to parse private key: {e}"),
             }
         })?;
 
@@ -336,7 +336,7 @@ impl TransactionExecutor {
             .parse::<url::Url>()
             .map_err(|e| EventMonitorError::HandlerError {
                 monitor: network_name.to_string(),
-                reason: format!("Failed to parse RPC URL: {}", e),
+                reason: format!("Failed to parse RPC URL: {e}"),
             })?;
 
         let provider = ProviderBuilder::new()

@@ -39,7 +39,7 @@ impl EventAbiDecoder {
             .parse::<Event>()
             .map_err(|e| EventMonitorError::DecodingError {
                 monitor: String::new(),
-                reason: format!("Invalid event signature '{}': {}", signature, e),
+                reason: format!("Invalid event signature '{signature}': {e}"),
             })?;
 
         // Cache the parsed event
@@ -102,7 +102,7 @@ impl EventAbiDecoder {
                 .parse::<DynSolType>()
                 .map_err(|e| EventMonitorError::DecodingError {
                     monitor: monitor_name.to_string(),
-                    reason: format!("Failed to parse type '{}': {}", param_type, e),
+                    reason: format!("Failed to parse type '{param_type}': {e}"),
                 })?;
 
         // For indexed reference types (strings, bytes, arrays), only the hash is stored
@@ -118,7 +118,7 @@ impl EventAbiDecoder {
             .abi_decode(topic)
             .map_err(|e| EventMonitorError::DecodingError {
                 monitor: monitor_name.to_string(),
-                reason: format!("Failed to decode indexed parameter: {}", e),
+                reason: format!("Failed to decode indexed parameter: {e}"),
             })?;
 
         Ok(Self::dyn_sol_value_to_json(&decoded))
@@ -137,7 +137,7 @@ impl EventAbiDecoder {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| EventMonitorError::DecodingError {
                 monitor: monitor_name.to_string(),
-                reason: format!("Failed to parse parameter types: {}", e),
+                reason: format!("Failed to parse parameter types: {e}"),
             })?;
 
         // Decode all values at once
@@ -148,7 +148,7 @@ impl EventAbiDecoder {
                 .abi_decode(data)
                 .map_err(|e| EventMonitorError::DecodingError {
                     monitor: monitor_name.to_string(),
-                    reason: format!("Failed to decode event data: {}", e),
+                    reason: format!("Failed to decode event data: {e}"),
                 })?;
 
         // Extract values from the tuple
@@ -171,7 +171,7 @@ impl EventAbiDecoder {
     /// Convert DynSolValue to JSON
     fn dyn_sol_value_to_json(value: &DynSolValue) -> Value {
         match value {
-            DynSolValue::Address(addr) => Value::String(format!("{:#x}", addr)),
+            DynSolValue::Address(addr) => Value::String(format!("{addr:#x}")),
             DynSolValue::Bool(b) => Value::Bool(*b),
             DynSolValue::Bytes(bytes) => Value::String(format!("0x{}", hex::encode(bytes))),
             DynSolValue::FixedBytes(bytes, _) => Value::String(format!("0x{}", hex::encode(bytes))),
