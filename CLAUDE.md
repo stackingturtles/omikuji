@@ -147,3 +147,12 @@ For comprehensive project documentation, see:
 
 ## Claude Interactions
 
+### Rust Format String Convention
+
+The `uninlined_format_args` lint requires using the newer format string syntax where variables are directly embedded in the string rather than passed as separate arguments.
+
+For example:
+- Old: `format!("Error: {}", e)`
+- New: `format!("Error: {e}")`
+
+This applies to all formatting macros including `format!`, `println!`, `eprintln!`, `write!`, etc. The CI pipeline enforces this with `cargo clippy -- -D warnings -D clippy::uninlined_format_args`.
