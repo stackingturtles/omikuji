@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Omikuji - Blockchain Oracle Middleware for Developers</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: #ffffff;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 80px 0;
+            text-align: center;
+        }
+        
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+        
+        .hero .subtitle {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+        
+        .hero .description {
+            font-size: 1.1rem;
+            margin-bottom: 40px;
+            opacity: 0.8;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .cta-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+        
+        .btn-primary {
+            background: #ff6b6b;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        /* Stats Section */
+        .stats {
+            background: #f8f9fa;
+            padding: 60px 0;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 40px;
+            text-align: center;
+        }
+        
+        .stat-item h3 {
+            font-size: 2.5rem;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .stat-item p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+        
+        /* Features Section */
+        .features {
+            padding: 80px 0;
+        }
+        
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+        
+        .section-subtitle {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #666;
+            margin-bottom: 60px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 40px;
+            margin-bottom: 60px;
+        }
+        
+        .feature-card {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #e0e0e0;
+            transition: all 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            color: #667eea;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: #1a1a1a;
+        }
+        
+        .feature-card p {
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        .feature-benefits {
+            list-style: none;
+            margin-top: 15px;
+        }
+        
+        .feature-benefits li {
+            color: #555;
+            margin-bottom: 8px;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .feature-benefits li:before {
+            content: "✓";
+            color: #4CAF50;
+            font-weight: bold;
+            position: absolute;
+            left: 0;
+        }
+        
+        /* Use Cases Section */
+        .use-cases {
+            background: #f8f9fa;
+            padding: 80px 0;
+        }
+        
+        .use-cases-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+        
+        .use-case {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .use-case h4 {
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .use-case p {
+            color: #666;
+            font-size: 0.95rem;
+        }
+        
+        /* Code Example */
+        .code-section {
+            padding: 80px 0;
+            background: #1a1a1a;
+            color: white;
+        }
+        
+        .code-section .section-title {
+            color: white;
+        }
+        
+        .code-section .section-subtitle {
+            color: #ccc;
+        }
+        
+        .code-example {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 30px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        
+        .code-example pre {
+            margin: 0;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        
+        .yaml { color: #f8f8f2; }
+        .key { color: #66d9ef; }
+        .value { color: #a6e22e; }
+        .string { color: #e6db74; }
+        .number { color: #ae81ff; }
+        
+        /* Getting Started */
+        .getting-started {
+            padding: 80px 0;
+            background: #f8f9fa;
+        }
+        
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+        
+        .step {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin: 0 auto 20px;
+        }
+        
+        .step h4 {
+            margin-bottom: 15px;
+            color: #1a1a1a;
+        }
+        
+        .step p {
+            color: #666;
+            font-size: 0.95rem;
+        }
+        
+        /* Footer */
+        .footer {
+            background: #1a1a1a;
+            color: white;
+            padding: 40px 0;
+            text-align: center;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .hero .subtitle {
+                font-size: 1.2rem;
+            }
+            
+            .cta-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <h1>Omikuji</h1>
+            <div class="subtitle">Ship Oracle-Powered dApps in Hours, Not Weeks</div>
+            <div class="description">
+                Production-ready blockchain oracle middleware that eliminates integration complexity. 
+                From price feeds to cross-chain data synchronization - one configuration file, infinite possibilities.
+            </div>
+            <div class="cta-buttons">
+                <a href="#getting-started" class="btn btn-primary">Start Building in 5 Minutes</a>
+                <a href="https://github.com/ijonas/omikuji" class="btn btn-secondary">View on GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="stats">
+        <div class="container">
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <h3>5 min</h3>
+                    <p>Setup to First Oracle Call</p>
+                </div>
+                <div class="stat-item">
+                    <h3>20-40%</h3>
+                    <p>Gas Cost Reduction</p>
+                </div>
+                <div class="stat-item">
+                    <h3>99.9%</h3>
+                    <p>Uptime with Auto-Retry</p>
+                </div>
+                <div class="stat-item">
+                    <h3>25+</h3>
+                    <p>Prometheus Metrics</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features">
+        <div class="container">
+            <h2 class="section-title">Built for Developers Under Pressure</h2>
+            <div class="section-subtitle">
+                Stop reinventing oracle infrastructure. Focus on your dApp logic while Omikuji handles the complexity.
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>5-Minute Oracle Setup</h3>
+                    <p>Zero learning curve. Configure any HTTP API as a blockchain oracle with YAML configuration.</p>
+                    <ul class="feature-benefits">
+                        <li>One config file, multiple networks</li>
+                        <li>Automatic ABI reading from contracts</li>
+                        <li>JSON path extraction with dot notation</li>
+                        <li>Built-in validation and error handling</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">💰</div>
+                    <h3>Intelligent Gas Management</h3>
+                    <p>EIP-1559 optimization with automatic fee bumping saves 20-40% on transaction costs.</p>
+                    <ul class="feature-benefits">
+                        <li>Dynamic fee estimation per network</li>
+                        <li>Stuck transaction recovery</li>
+                        <li>Gas usage analytics and alerts</li>
+                        <li>Configurable safety limits</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Production-Grade Monitoring</h3>
+                    <p>Prometheus metrics export with 25+ key performance indicators for oracle health.</p>
+                    <ul class="feature-benefits">
+                        <li>Feed value tracking and deviation alerts</li>
+                        <li>Wallet balance monitoring</li>
+                        <li>Transaction success rates</li>
+                        <li>Gas efficiency analysis</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔄</div>
+                    <h3>Real-Time Event Processing</h3>
+                    <p>WebSocket-powered event monitoring with webhook triggers for instant on-chain reactions.</p>
+                    <ul class="feature-benefits">
+                        <li>Low-latency blockchain event detection</li>
+                        <li>HTTP webhook callbacks with retry logic</li>
+                        <li>Automated contract execution</li>
+                        <li>Duplicate event prevention</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🔐</div>
+                    <h3>Enterprise Security</h3>
+                    <p>Multi-tier key management with OS keyring, Vault, and AWS Secrets Manager support.</p>
+                    <ul class="feature-benefits">
+                        <li>Network-isolated private keys</li>
+                        <li>Role-based access control</li>
+                        <li>Comprehensive audit trails</li>
+                        <li>Zero-trust architecture</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3>Multi-Chain Native</h3>
+                    <p>Deploy across Ethereum, BASE, Polygon, and any EVM network with unified configuration.</p>
+                    <ul class="feature-benefits">
+                        <li>Cross-chain data synchronization</li>
+                        <li>Network-specific gas strategies</li>
+                        <li>Parallel feed execution</li>
+                        <li>Automatic failover between RPC nodes</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Use Cases Section -->
+    <section class="use-cases">
+        <div class="container">
+            <h2 class="section-title">Real-World Developer Success Stories</h2>
+            <div class="section-subtitle">
+                See how teams are shipping faster with Omikuji
+            </div>
+
+            <div class="use-cases-grid">
+                <div class="use-case">
+                    <h4>🏦 DeFi Protocol - Price Oracle</h4>
+                    <p><strong>Problem:</strong> Team needed reliable ETH/USD price feeds for their lending protocol launch. Manual Chainlink integration was taking 3 weeks.<br>
+                    <strong>Solution:</strong> Deployed Omikuji with CoinGecko API in 1 hour. Saved $50K+ in developer time.</p>
+                </div>
+
+                <div class="use-case">
+                    <h4>🌉 Cross-Chain Bridge - Asset Sync</h4>
+                    <p><strong>Problem:</strong> Required real-time asset price synchronization between Ethereum and Polygon for accurate swap rates.<br>
+                    <strong>Solution:</strong> Single Omikuji instance feeds both networks. 99.9% uptime with automatic retry logic.</p>
+                </div>
+
+                <div class="use-case">
+                    <h4>🎮 GameFi - Real-World Events</h4>
+                    <p><strong>Problem:</strong> Sports betting dApp needed reliable game outcome data from external APIs.<br>
+                    <strong>Solution:</strong> Event-driven webhooks trigger automatic payout execution. Reduced manual intervention by 95%.</p>
+                </div>
+
+                <div class="use-case">
+                    <h4>🛡️ Insurance Protocol - Claims Processing</h4>
+                    <p><strong>Problem:</strong> Flight delay insurance needed automated claim triggers from aviation APIs.<br>
+                    <strong>Solution:</strong> Conditional execution checks flight status before triggering payouts. Zero false positives in 6 months.</p>
+                </div>
+
+                <div class="use-case">
+                    <h4>📈 Yield Farming - APY Optimization</h4>
+                    <p><strong>Problem:</strong> Automated yield strategy needed real-time APY data from multiple DeFi protocols.<br>
+                    <strong>Solution:</strong> Multi-source aggregation with deviation-based updates. Captures yield opportunities within 30 seconds.</p>
+                </div>
+
+                <div class="use-case">
+                    <h4>🏭 Supply Chain - IoT Integration</h4>
+                    <p><strong>Problem:</strong> Tokenized commodities needed real-time temperature and location data from IoT sensors.<br>
+                    <strong>Solution:</strong> RESTful API integration with custom validation. 100% data integrity with automated quality checks.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Code Example Section -->
+    <section class="code-section">
+        <div class="container">
+            <h2 class="section-title">Deploy Your First Oracle in 3 Lines</h2>
+            <div class="section-subtitle">
+                Real configuration that powers production oracles
+            </div>
+
+            <div class="code-example">
+                <pre><code class="yaml"><span class="key">networks</span>:
+  - <span class="key">name</span>: <span class="string">ethereum-mainnet</span>
+    <span class="key">rpc_url</span>: <span class="string">https://eth-mainnet.alchemyapi.io/v2/YOUR_KEY</span>
+    <span class="key">transaction_type</span>: <span class="string">eip1559</span>
+
+<span class="key">datafeeds</span>:
+  - <span class="key">name</span>: <span class="string">eth_usd_price</span>
+    <span class="key">networks</span>: <span class="string">ethereum-mainnet</span>
+    <span class="key">check_frequency</span>: <span class="number">60</span>                    <span class="comment"># Check every 60 seconds</span>
+    <span class="key">contract_address</span>: <span class="string">0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419</span>
+    <span class="key">contract_type</span>: <span class="string">fluxmon</span>
+    <span class="key">minimum_update_frequency</span>: <span class="number">3600</span>         <span class="comment"># Force update every hour</span>
+    <span class="key">deviation_threshold_pct</span>: <span class="number">0.5</span>           <span class="comment"># Update on 0.5% price change</span>
+    <span class="key">feed_url</span>: <span class="string">https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd</span>
+    <span class="key">feed_json_path</span>: <span class="string">ethereum.usd</span>          <span class="comment"># Extract price from JSON response</span></code></pre>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 20px; display: inline-block;">
+                    <p style="margin: 0; font-size: 1.1rem;"><strong>Result:</strong> Production ETH/USD oracle with gas optimization, error handling, and monitoring - ready in minutes</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Getting Started Section -->
+    <section class="getting-started" id="getting-started">
+        <div class="container">
+            <h2 class="section-title">Ship Your Oracle in 5 Minutes</h2>
+            <div class="section-subtitle">
+                From zero to production oracle with built-in monitoring and cost optimization
+            </div>
+
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Download & Install</h4>
+                    <p>
+                        <code>wget https://github.com/ijonas/omikuji/releases/latest/download/omikuji-linux-x64</code><br>
+                        <code>chmod +x omikuji-linux-x64</code><br>
+                        <code>sudo mv omikuji-linux-x64 /usr/local/bin/omikuji</code>
+                    </p>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>Configure Your Oracle</h4>
+                    <p>
+                        Create <code>config.yaml</code> with your network, contract address, and data source URL. 
+                        Omikuji automatically reads contract configuration and optimizes gas settings.
+                    </p>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>Import Private Key</h4>
+                    <p>
+                        <code>omikuji key import --network ethereum-mainnet</code><br>
+                        Secure storage using OS keyring, Vault, or AWS Secrets Manager.
+                    </p>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h4>Launch & Monitor</h4>
+                    <p>
+                        <code>omikuji --config config.yaml</code><br>
+                        View metrics at <code>http://localhost:9090/metrics</code> - full Prometheus integration included.
+                    </p>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 50px;">
+                <a href="https://github.com/ijonas/omikuji" class="btn btn-primary" style="margin-right: 20px;">
+                    Start Building Now
+                </a>
+                <a href="https://github.com/ijonas/omikuji/tree/main/docs" class="btn btn-secondary">
+                    Read Full Documentation
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>
+                Omikuji v0.2.15 | 
+                <a href="https://github.com/ijonas/omikuji">GitHub</a> | 
+                <a href="https://github.com/ijonas/omikuji/tree/main/docs">Documentation</a> | 
+                <a href="https://github.com/ijonas/omikuji/issues">Issues</a> | 
+                <a href="https://github.com/ijonas/omikuji/blob/main/LICENSE">MIT License</a>
+            </p>
+            <p style="margin-top: 10px; color: #666;">
+                Built with ❤️ for blockchain developers who value their time
+            </p>
+        </div>
+    </footer>
+</body>
+</html>

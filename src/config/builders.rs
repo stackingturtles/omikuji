@@ -362,6 +362,7 @@ impl DatafeedBuilder {
             feed_url: self.feed_url,
             feed_json_path: self.feed_json_path,
             feed_json_path_timestamp: self.feed_json_path_timestamp,
+            enable_timestamp_safety_check: false, // Default to false
             decimals: self.decimals,
             min_value: self.min_value,
             max_value: self.max_value,

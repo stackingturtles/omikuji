@@ -264,7 +264,7 @@ mod tests {
         use sqlx::postgres::PgPoolOptions;
         use std::time::Duration as StdDuration;
 
-        let pool_options = PgPoolOptions::new()
+        let _pool_options = PgPoolOptions::new()
             .max_connections(5)
             .min_connections(1)
             .acquire_timeout(StdDuration::from_secs(3))

@@ -25,6 +25,7 @@ Omikuji will monitor external datafeeds such as price feeds (the price of gold, 
   - Time-Based Updates: Automatically submit new values when minimum update frequency has elapsed
   - Deviation-Based Updates: Submit updates when price changes exceed configured percentage thresholds
   - Dual-Trigger System: Updates occur when either time OR deviation conditions are met
+  - Oracle Coordination: Timestamp safety checks prevent nodes from overwriting newer data with stale values
 
   Configuration
 

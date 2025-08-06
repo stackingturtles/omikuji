@@ -473,6 +473,10 @@ pub struct Datafeed {
     /// JSON path to extract the timestamp from the feed response (optional)
     pub feed_json_path_timestamp: Option<String>,
 
+    /// Enable timestamp safety check to prevent stale data updates (default: false)
+    #[serde(default)]
+    pub enable_timestamp_safety_check: bool,
+
     /// Number of decimals to use (optional, used when read_contract_config is false)
     pub decimals: Option<u8>,
 

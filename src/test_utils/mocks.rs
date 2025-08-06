@@ -209,7 +209,6 @@ impl MockHttpServer {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("{}")
-            .with_chunked_body()
             .create()
     }
 

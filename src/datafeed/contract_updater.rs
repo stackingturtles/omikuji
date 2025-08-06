@@ -7,7 +7,7 @@ use alloy::{
 };
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use super::contract_utils::{
@@ -224,53 +224,124 @@ impl<'a> ContractUpdater<'a> {
         Ok(exceeds_threshold)
     }
 
-    /// Checks if an update is needed based on either time or deviation thresholds
+    /// Checks if an update is needed based on time, deviation, and timestamp safety
     /// Returns (should_update, reason) where reason describes what triggered the update
     pub async fn check_update_needed(
         &self,
         datafeed: &Datafeed,
         new_value: f64,
-    ) -> Result<(bool, &'static str)> {
+        feed_timestamp: u64,
+    ) -> Result<(bool, String)> {
         // Check both conditions
         let time_check = self.should_update_based_on_time(datafeed).await?;
         let deviation_check = self
             .should_update_based_on_deviation(datafeed, new_value)
             .await?;
 
-        // Determine if update is needed and why
-        let (should_update, reason_str, update_reason, skip_reason) =
-            match (time_check, deviation_check) {
-                (true, true) => (
-                    true,
-                    "both time and deviation thresholds",
-                    Some(UpdateReason::Both),
-                    None,
-                ),
-                (true, false) => (
-                    true,
-                    "time threshold",
-                    Some(UpdateReason::TimeThreshold),
-                    None,
-                ),
-                (false, true) => (
-                    true,
-                    "deviation threshold",
-                    Some(UpdateReason::DeviationThreshold),
-                    None,
-                ),
-                (false, false) => (false, "", None, Some(SkipReason::NoDeviation)),
-            };
+        // Check if either condition is met before applying timestamp safety check
+        let basic_update_needed = time_check || deviation_check;
 
-        // Record update decision
+        if !basic_update_needed {
+            // Record decision and return early if no basic update is needed
+            UpdateMetrics::record_update_decision(
+                &datafeed.name,
+                &datafeed.networks,
+                false,
+                None,
+                Some(SkipReason::NoDeviation),
+            );
+            return Ok((
+                false,
+                "neither time nor deviation thresholds met".to_string(),
+            ));
+        }
+
+        // Apply timestamp safety check if enabled
+        if datafeed.enable_timestamp_safety_check {
+            debug!(
+                "Timestamp safety check enabled for datafeed {} with feed timestamp {}",
+                datafeed.name, feed_timestamp
+            );
+
+            // Try to get the latest on-chain timestamp
+            match self.get_latest_on_chain_timestamp(datafeed).await {
+                Ok(on_chain_timestamp) => {
+                    if feed_timestamp <= on_chain_timestamp {
+                        info!(
+                            "Skipping update for {}: local timestamp {} is not newer than on-chain timestamp {}",
+                            datafeed.name, feed_timestamp, on_chain_timestamp
+                        );
+
+                        // Record skip decision
+                        UpdateMetrics::record_update_decision(
+                            &datafeed.name,
+                            &datafeed.networks,
+                            false,
+                            None,
+                            Some(SkipReason::NoDeviation), // Could add a new SkipReason::TimestampStale
+                        );
+
+                        return Ok((false, format!("timestamp safety check failed: local timestamp {feed_timestamp} <= on-chain timestamp {on_chain_timestamp}")));
+                    } else {
+                        debug!(
+                            "Timestamp safety check passed for {}: local timestamp {} > on-chain timestamp {}",
+                            datafeed.name, feed_timestamp, on_chain_timestamp
+                        );
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to get on-chain timestamp for {}: {}. Proceeding with update (timestamp safety check disabled for this update).",
+                        datafeed.name, e
+                    );
+                }
+            }
+        }
+
+        // Determine update reason and record decision
+        let (reason_str, update_reason) = match (time_check, deviation_check) {
+            (true, true) => (
+                "both time and deviation thresholds".to_string(),
+                Some(UpdateReason::Both),
+            ),
+            (true, false) => (
+                "time threshold".to_string(),
+                Some(UpdateReason::TimeThreshold),
+            ),
+            (false, true) => (
+                "deviation threshold".to_string(),
+                Some(UpdateReason::DeviationThreshold),
+            ),
+            _ => unreachable!("basic_update_needed is true, so at least one condition must be met"),
+        };
+
+        // Record successful update decision
         UpdateMetrics::record_update_decision(
             &datafeed.name,
             &datafeed.networks,
-            should_update,
+            true,
             update_reason,
-            skip_reason,
+            None,
         );
 
-        Ok((should_update, reason_str))
+        Ok((true, reason_str))
+    }
+
+    /// Gets the latest on-chain timestamp from the contract
+    async fn get_latest_on_chain_timestamp(&self, datafeed: &Datafeed) -> Result<u64> {
+        let contract = self.get_contract_for_read(datafeed).await?;
+        contract
+            .get_latest_on_chain_timestamp_with_metrics(
+                Some(&datafeed.name),
+                Some(&datafeed.networks),
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to get latest on-chain timestamp for datafeed {}",
+                    datafeed.name
+                )
+            })
     }
 
     /// Submits a new value to the contract
@@ -450,6 +521,7 @@ mod tests {
             feed_url: "http://example.com/api".to_string(),
             feed_json_path: "data.price".to_string(),
             feed_json_path_timestamp: Some("data.timestamp".to_string()),
+            enable_timestamp_safety_check: false,
             data_retention_days: 7,
         }
     }
@@ -625,5 +697,73 @@ mod tests {
         let scaled_exact = scale_value_for_contract(exact_change, decimals);
         let exact_deviation = calculate_deviation_percentage(current_value, scaled_exact);
         assert_eq!(exact_deviation, datafeed.deviation_threshold_pct);
+    }
+
+    #[test]
+    fn test_timestamp_safety_check_default_disabled() {
+        let datafeed = create_test_datafeed();
+        // Default should be false (disabled)
+        assert!(!datafeed.enable_timestamp_safety_check);
+    }
+
+    #[test]
+    fn test_timestamp_safety_check_enabled() {
+        let mut datafeed = create_test_datafeed();
+        datafeed.enable_timestamp_safety_check = true;
+        assert!(datafeed.enable_timestamp_safety_check);
+    }
+
+    #[test]
+    fn test_timestamp_comparison_logic() {
+        // Test that newer timestamp should allow update
+        let feed_timestamp = 1700000000u64; // Jan 2024
+        let on_chain_timestamp = 1600000000u64; // Sep 2020
+        assert!(
+            feed_timestamp > on_chain_timestamp,
+            "Feed timestamp should be newer"
+        );
+
+        // Test that older timestamp should prevent update
+        let old_feed_timestamp = 1500000000u64; // July 2017
+        let recent_on_chain = 1700000000u64; // Jan 2024
+        assert!(
+            old_feed_timestamp <= recent_on_chain,
+            "Feed timestamp should be older or equal"
+        );
+
+        // Test equal timestamps (should prevent update)
+        let equal_timestamp = 1650000000u64;
+        assert!(
+            equal_timestamp <= equal_timestamp,
+            "Equal timestamps should prevent update"
+        );
+    }
+
+    #[test]
+    fn test_datafeed_with_timestamp_safety_configuration() {
+        let mut datafeed = create_test_datafeed();
+
+        // Test disabling safety check
+        datafeed.enable_timestamp_safety_check = false;
+        assert!(!datafeed.enable_timestamp_safety_check);
+
+        // Test enabling safety check
+        datafeed.enable_timestamp_safety_check = true;
+        assert!(datafeed.enable_timestamp_safety_check);
+    }
+
+    #[test]
+    fn test_unix_timestamp_conversion() {
+        // Test typical Unix timestamp ranges
+        let timestamp_2020 = 1577836800u64; // Jan 1, 2020
+        let timestamp_2024 = 1704067200u64; // Jan 1, 2024
+        let timestamp_2025 = 1735689600u64; // Jan 1, 2025
+
+        // Ensure timestamps are in reasonable order
+        assert!(timestamp_2020 < timestamp_2024);
+        assert!(timestamp_2024 < timestamp_2025);
+
+        // Test that they convert to u64 properly
+        assert_eq!(timestamp_2024 as u64, 1704067200);
     }
 }

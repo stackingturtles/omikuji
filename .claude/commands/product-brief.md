@@ -57,4 +57,5 @@ ultra-think
 
 Read the readme.md and read the contents of the docs/ folder. Then use the linear MCP to find out the list of all issues. Read all the issues in the Omikuji project. Then build me a one-page product datasheet in HTML form with hero text and features and benefits for blockchain developers short on time and under pressure to deliver features fast that require oracle software for bringing data on-chain or off-chain and integrating with external systems. Provide plenty of real world examples to illustrate your points.
 
-Write your product datasheet in HTML form and save it to the web/ folder.
+Write your product datasheet in HTML form and save it to the web/ folder
+$ARGUMENTS
