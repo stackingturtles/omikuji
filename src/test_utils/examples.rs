@@ -96,7 +96,7 @@ mod examples {
         let mut tested_count = 0;
 
         // Test with floating point edge cases
-        float_edge_cases::test_with_edge_cases(|value, description| {
+        float_edge_cases::test_with_edge_cases(|value, _description| {
             // Your test logic here - this function will be called
             // with each edge case value
             assert!(value.is_finite() || value.is_nan() || value.is_infinite());
@@ -231,7 +231,7 @@ mod patterns {
     #[test]
     fn test_realistic_data_pattern() {
         // Test with realistic price variations
-        float_edge_cases::test_with_price_values(|price, description| {
+        float_edge_cases::test_with_price_values(|price, _description| {
             let scaled = (price * 1e8) as i128; // Scale for 8 decimals
 
             // Verify scaling doesn't overflow for realistic prices

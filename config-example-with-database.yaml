@@ -51,7 +51,7 @@ datafeeds:
     feed_json_path: USD
     data_retention_days: 7  # Keep 7 days of history
 
-  # BTC/USD price feed with 30-day data retention
+  # BTC/USD price feed with 30-day data retention and timestamp safety
   - name: btc_usd
     networks: base
     check_frequency: 120  # Check every 2 minutes
@@ -65,6 +65,8 @@ datafeeds:
     deviation_threshold_pct: 1.0  # Update on 1% price change
     feed_url: https://api.coinbase.com/v2/exchange-rates?currency=BTC
     feed_json_path: data.rates.USD
+    feed_json_path_timestamp: data.epoch  # Extract timestamp from feed
+    enable_timestamp_safety_check: true  # Prevent stale data updates
     data_retention_days: 30  # Keep 30 days of history
 
   # LINK/USD price feed with 14-day data retention

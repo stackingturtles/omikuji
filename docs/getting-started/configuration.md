@@ -125,6 +125,35 @@ feed_json_path_timestamp: data.timestamp    # Unix timestamp from API
 
 If not specified, Omikuji uses the current time.
 
+### Timestamp Safety Check
+
+To prevent multiple oracle nodes from overwriting each other with stale data, you can enable timestamp safety checking:
+
+```yaml
+datafeeds:
+  - name: btc_usd
+    # ... other configuration ...
+    feed_json_path_timestamp: data.timestamp    # Required for safety check
+    enable_timestamp_safety_check: true         # Enable safety feature
+```
+
+**How it works:**
+1. Omikuji extracts a timestamp from the external API response
+2. Before submitting an update, it checks the latest on-chain timestamp from `latestRoundData()`
+3. If the external timestamp is older than or equal to the on-chain timestamp, the update is skipped
+4. Only when the external data is newer does Omikuji submit the update
+
+**Benefits:**
+- Prevents oracle nodes from fighting with stale data
+- Reduces unnecessary gas consumption
+- Improves data quality and consistency
+- Maintains natural oracle precedence based on data freshness
+
+**Requirements:**
+- `feed_json_path_timestamp` must be configured
+- External API must provide Unix timestamps
+- Default: `false` (disabled for backward compatibility)
+
 ## Key Management
 
 Omikuji supports two methods for managing private keys: OS keyring and environment variables. See the [Key Storage Guide](../configuration/key-storage.md) for choosing the right storage backend for your environment.

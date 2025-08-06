@@ -198,7 +198,7 @@ impl FeedMonitor {
                     }
 
                     // Check if contract update is needed based on time
-                    if let Err(e) = self.check_and_update_contract(value).await {
+                    if let Err(e) = self.check_and_update_contract(value, timestamp).await {
                         error!(
                             "Failed to update contract for datafeed {}: {}",
                             self.datafeed.name, e
@@ -244,7 +244,7 @@ impl FeedMonitor {
     }
 
     /// Checks if contract update is needed and submits if necessary
-    async fn check_and_update_contract(&self, value: f64) -> Result<()> {
+    async fn check_and_update_contract(&self, value: f64, timestamp: u64) -> Result<()> {
         let mut updater = if let Some(ref tx_repo) = self.tx_log_repo {
             ContractUpdater::with_tx_logging(&self.network_manager, &self.config, tx_repo.clone())
         } else {
@@ -256,8 +256,10 @@ impl FeedMonitor {
             updater = updater.with_gas_price_manager(gas_price_manager);
         }
 
-        // Check if update is needed
-        let (should_update, reason) = updater.check_update_needed(&self.datafeed, value).await?;
+        // Check if update is needed (including timestamp safety check)
+        let (should_update, reason) = updater
+            .check_update_needed(&self.datafeed, value, timestamp)
+            .await?;
 
         if should_update {
             info!(
@@ -269,8 +271,8 @@ impl FeedMonitor {
             updater.submit_value(&self.datafeed, value).await?;
         } else {
             debug!(
-                "No update needed for datafeed {} - neither time nor deviation thresholds met",
-                self.datafeed.name
+                "No update needed for datafeed {} - {}",
+                self.datafeed.name, reason
             );
         }
 

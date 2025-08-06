@@ -169,6 +169,88 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         }
     }
 
+    /// Get the latest round data
+    pub async fn latest_round_data(&self) -> Result<(U256, I256, U256, U256, U256)> {
+        self.latest_round_data_with_metrics(None, None).await
+    }
+
+    /// Get the latest round data with metrics
+    pub async fn latest_round_data_with_metrics(
+        &self,
+        feed_name: Option<&str>,
+        network: Option<&str>,
+    ) -> Result<(U256, I256, U256, U256, U256)> {
+        let start = Instant::now();
+        let call = IFluxAggregator::latestRoundDataCall {};
+        let tx = TransactionRequest::default()
+            .to(self.address)
+            .input(call.abi_encode().into());
+
+        match self.provider.call(&tx).block(BlockId::latest()).await {
+            Ok(result) => {
+                let duration = start.elapsed();
+
+                // Record metrics if context is provided
+                if let (Some(feed), Some(net)) = (feed_name, network) {
+                    ContractMetrics::record_contract_read(
+                        feed,
+                        net,
+                        "latestRoundData",
+                        true,
+                        duration,
+                        None,
+                    );
+                }
+
+                let decoded =
+                    IFluxAggregator::latestRoundDataCall::abi_decode_returns(&result, true)?;
+                Ok((
+                    U256::from(decoded.roundId),
+                    decoded.answer,
+                    decoded.startedAt,
+                    decoded.updatedAt,
+                    U256::from(decoded.answeredInRound),
+                ))
+            }
+            Err(e) => {
+                let duration = start.elapsed();
+
+                // Record metrics if context is provided
+                if let (Some(feed), Some(net)) = (feed_name, network) {
+                    ContractMetrics::record_contract_read(
+                        feed,
+                        net,
+                        "latestRoundData",
+                        false,
+                        duration,
+                        Some(&e.to_string()),
+                    );
+                }
+
+                Err(e.into())
+            }
+        }
+    }
+
+    /// Get the latest on-chain timestamp from latestRoundData
+    /// Returns the updatedAt timestamp (index 3 of latestRoundData)
+    pub async fn get_latest_on_chain_timestamp(&self) -> Result<u64> {
+        self.get_latest_on_chain_timestamp_with_metrics(None, None)
+            .await
+    }
+
+    /// Get the latest on-chain timestamp with metrics
+    pub async fn get_latest_on_chain_timestamp_with_metrics(
+        &self,
+        feed_name: Option<&str>,
+        network: Option<&str>,
+    ) -> Result<u64> {
+        let (_, _, _, updated_at, _) = self
+            .latest_round_data_with_metrics(feed_name, network)
+            .await?;
+        Ok(updated_at.to::<u64>())
+    }
+
     /// Get the latest round
     pub async fn latest_round(&self) -> Result<U256> {
         let call = IFluxAggregator::latestRoundCall {};

@@ -211,6 +211,13 @@ datafeeds:
 - Description: Path to extract Unix timestamp from JSON
 - Example: `data.last_updated`
 
+#### `enable_timestamp_safety_check` (optional)
+- Type: `boolean`
+- Description: Enable timestamp safety check to prevent stale data updates
+- Default: `false` (disabled)
+- Behavior: When enabled, compares external feed timestamp with on-chain timestamp
+- Effect: Skips update if external timestamp ≤ on-chain timestamp
+
 ## Event Monitors Section
 
 Configure real-time blockchain event monitoring with webhook notifications.

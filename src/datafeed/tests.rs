@@ -323,6 +323,7 @@ mod tests {
                     feed_url: "https://example.com/api".to_string(),
                     feed_json_path: "data.price".to_string(),
                     feed_json_path_timestamp: Some("data.timestamp".to_string()),
+                    enable_timestamp_safety_check: false,
                     decimals: Some(8),
                     min_value: Some(I256::try_from(1).unwrap()),
                     max_value: Some(I256::try_from(1000000).unwrap()),
@@ -349,13 +350,13 @@ mod tests {
                 }
             };
 
-            let updater = ContractUpdater::new(&network_manager, &config);
+            let _updater = ContractUpdater::new(&network_manager, &config);
             // Basic creation test - just ensuring it doesn't panic
         }
 
         #[test]
         fn test_get_network_config() {
-            let config = create_test_config();
+            let _config = create_test_config();
             // This would normally be a private method test
             // We test it indirectly through public methods
         }
@@ -484,6 +485,7 @@ mod tests {
                 feed_url: "".to_string(),
                 feed_json_path: "".to_string(),
                 feed_json_path_timestamp: None,
+                enable_timestamp_safety_check: false,
                 decimals: Some(8),
                 min_value: Some(I256::try_from(1000).unwrap()),
                 max_value: Some(I256::try_from(1000000).unwrap()),

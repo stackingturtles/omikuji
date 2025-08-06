@@ -413,6 +413,7 @@ mod tests {
                 feed_url: "https://example.com/api".to_string(),
                 feed_json_path: "data.price".to_string(),
                 feed_json_path_timestamp: Some("data.timestamp".to_string()),
+                enable_timestamp_safety_check: false,
                 decimals: None,
                 min_value: None,
                 max_value: None,

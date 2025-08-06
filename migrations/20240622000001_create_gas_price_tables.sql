@@ -44,7 +44,8 @@ SELECT
 FROM gas_costs_usd
 GROUP BY network, feed_name, DATE_TRUNC('hour', created_at);
 
--- View for daily gas costs aggregation
+-- View for daily gas costs aggregation (replace existing view)
+DROP VIEW IF EXISTS daily_gas_costs;
 CREATE VIEW daily_gas_costs AS
 SELECT 
     network,
