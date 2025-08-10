@@ -1182,12 +1182,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_network_monitoring_with_valid_network() {
-        // Create a network with valid URL
+        // Create a mock server
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock the necessary RPC calls
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+
+        // Create a network with mock server URL
         let networks = vec![crate::config::models::Network {
             name: "test-network".to_string(),
             nodes: vec![crate::config::models::NetworkNode {
                 name: "Local Node".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
+                rpc_url: mock_server.url(),
                 ws_url: None,
             }],
             transaction_type: "legacy".to_string(),

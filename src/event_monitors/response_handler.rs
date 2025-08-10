@@ -579,12 +579,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_same_contract_validation() {
+        // Create a mock server
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock the necessary RPC calls
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+
         // Test that contract calls are only allowed to the same contract that emitted the event
         let networks = vec![crate::config::models::Network {
             name: "ethereum-mainnet".to_string(),
             nodes: vec![crate::config::models::NetworkNode {
                 name: "Local Node".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
+                rpc_url: mock_server.url(),
                 ws_url: None,
             }],
             transaction_type: "legacy".to_string(),
@@ -650,12 +661,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_value_limit_validation() {
+        // Create a mock server
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock the necessary RPC calls
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+
         // Test that value limits are enforced
         let networks = vec![crate::config::models::Network {
             name: "ethereum-mainnet".to_string(),
             nodes: vec![crate::config::models::NetworkNode {
                 name: "Local Node".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
+                rpc_url: mock_server.url(),
                 ws_url: None,
             }],
             transaction_type: "legacy".to_string(),
@@ -817,6 +839,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_contract_call_handler_missing_calls() {
+        // Create a mock server
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock the necessary RPC calls
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"jsonrpc":"2.0","result":"0x1","id":1}"#)
+            .create();
+
         // Test missing contract calls in response
         let monitor = test_monitor(ResponseType::ContractCall);
         let mut response = test_response();
@@ -830,7 +863,7 @@ mod tests {
             name: "ethereum-mainnet".to_string(),
             nodes: vec![crate::config::models::NetworkNode {
                 name: "Local Node".to_string(),
-                rpc_url: "http://localhost:8545".to_string(),
+                rpc_url: mock_server.url(),
                 ws_url: None,
             }],
             transaction_type: "legacy".to_string(),
