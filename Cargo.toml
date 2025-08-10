@@ -69,15 +69,10 @@ vaultrs = "0.7"
 aws-config = "1.5"
 aws-sdk-secretsmanager = "1.50"
 
-# Optional mockito for testing
-mockito = { version = "1.2", optional = true }
-
 [dev-dependencies]
 tempfile = "3.9"
 rand = "0.8"
-
-[features]
-mockito = ["dep:mockito"]
+mockito = "1.2"
 
 [profile.release]
 opt-level = 3

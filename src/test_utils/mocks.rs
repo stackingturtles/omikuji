@@ -177,12 +177,10 @@ impl Default for MockKeyStorage {
 }
 
 /// Mock HTTP server builder for testing external API calls
-#[cfg(feature = "mockito")]
 pub struct MockHttpServer {
     server: mockito::ServerGuard,
 }
 
-#[cfg(feature = "mockito")]
 impl MockHttpServer {
     pub async fn new() -> Self {
         Self {

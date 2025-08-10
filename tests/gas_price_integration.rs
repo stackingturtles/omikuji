@@ -198,6 +198,7 @@ fn create_test_config() -> OmikujiConfig {
             feed_json_path: "price".to_string(),
             feed_json_path_timestamp: None,
             data_retention_days: 7,
+            enable_timestamp_safety_check: true,
         }],
         database_cleanup: DatabaseCleanupConfig {
             enabled: false,
