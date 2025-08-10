@@ -11,3 +11,4 @@ config.yaml
 coverage.lcov
 /target/coverage/
 web/
+logs/*
