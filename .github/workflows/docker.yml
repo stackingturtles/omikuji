@@ -16,8 +16,9 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # Changed from read to write for SBOM release attachment
       packages: write
+      actions: read    # Added for artifact access
       
     steps:
       - name: Checkout code
@@ -66,16 +67,19 @@ jobs:
             type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
           
       - name: Generate SBOM
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/')
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           format: spdx-json
-          output-file: sbom.spdx.json
+          output-file: sbom-${{ github.ref_name }}.spdx.json
+          upload-release-assets: true  # Enable uploading to release
+          upload-artifact: true        # Also upload as workflow artifact
           
-      - name: Upload SBOM
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom.spdx.json
+      - name: Upload SBOM to Release
+        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Upload SBOM to the release
+          gh release upload "${{ github.ref_name }}" "sbom-${{ github.ref_name }}.spdx.json" --clobber || true
