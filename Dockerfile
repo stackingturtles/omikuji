@@ -1,6 +1,6 @@
 # Multi-stage build for minimal final image
 # Builder stage
-FROM rust:1.82-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -14,12 +14,15 @@ WORKDIR /build
 # Copy manifests first for better caching
 COPY Cargo.toml Cargo.lock ./
 
+# Copy SQLX offline query data
+COPY .sqlx ./.sqlx
+
 # Create dummy main.rs for dependency caching
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs
 
 # Build dependencies only (this layer will be cached)
-RUN cargo build --release && \
+RUN SQLX_OFFLINE=true cargo build --release && \
     rm -rf src
 
 # Copy actual source code
@@ -29,7 +32,7 @@ COPY src ./src
 COPY migrations ./migrations
 
 # Build the application
-RUN cargo build --release && \
+RUN SQLX_OFFLINE=true cargo build --release && \
     strip target/release/omikuji
 
 # Runtime stage
