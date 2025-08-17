@@ -447,6 +447,16 @@ async fn main() -> Result<()> {
         wallet_monitor.start().await;
     });
 
+    // Start network health monitor
+    let health_monitor = omikuji::network::health_monitor::NetworkHealthMonitor::new(
+        Arc::clone(&network_manager),
+        omikuji::network::health_monitor::HealthMonitorConfig::default(),
+    );
+    tokio::spawn(async move {
+        health_monitor.start().await;
+    });
+    info!("Started network health monitor");
+
     info!("Omikuji starting up...");
 
     // Get chain ID and block number for each network as a test

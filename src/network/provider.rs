@@ -285,10 +285,6 @@ impl NetworkManager {
         }
     }
 
-    /// Get all configured network names
-    pub fn get_network_names(&self) -> Vec<String> {
-        self.providers.keys().cloned().collect()
-    }
 
     /// Get the wallet address for a given network
     pub fn get_wallet_address(&self, network_name: &str) -> Result<Address> {
@@ -337,6 +333,11 @@ impl NetworkManager {
         self.networks
             .get(network_name)
             .ok_or_else(|| NetworkError::NetworkNotFound(network_name.to_string()).into())
+    }
+
+    /// Get all network names
+    pub fn get_network_names(&self) -> Vec<String> {
+        self.networks.keys().cloned().collect()
     }
 
     /// Create a provider from an RPC URL

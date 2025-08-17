@@ -84,6 +84,34 @@ lazy_static! {
         "Total number of RPC errors by type",
         &["network", "error_type", "method"]
     ).expect("Failed to create rpc_error_count metric");
+
+    /// Network base fee for EIP-1559
+    static ref NETWORK_BASE_FEE_GWEI: GaugeVec = register_gauge_vec!(
+        "omikuji_network_base_fee_gwei",
+        "Current network base fee in gwei (EIP-1559)",
+        &["network"]
+    ).expect("Failed to create network_base_fee metric");
+
+    /// Network priority fee percentiles
+    static ref NETWORK_PRIORITY_FEE_PERCENTILES_GWEI: GaugeVec = register_gauge_vec!(
+        "omikuji_network_priority_fee_percentiles_gwei",
+        "Network priority fee percentiles in gwei",
+        &["network", "percentile"]
+    ).expect("Failed to create network_priority_fee_percentiles metric");
+
+    /// Network congestion level (0-100)
+    static ref NETWORK_CONGESTION_LEVEL: GaugeVec = register_gauge_vec!(
+        "omikuji_network_congestion_level",
+        "Network congestion level (0=low, 100=high)",
+        &["network"]
+    ).expect("Failed to create network_congestion_level metric");
+
+    /// Last block timestamp
+    static ref LAST_BLOCK_TIMESTAMP: GaugeVec = register_gauge_vec!(
+        "omikuji_last_block_timestamp",
+        "Timestamp of the last processed block",
+        &["network"]
+    ).expect("Failed to create last_block_timestamp metric");
 }
 
 /// Network metrics collector
@@ -237,6 +265,42 @@ impl NetworkMetrics {
                 network, utilization, active, total
             );
         }
+    }
+
+    /// Update network base fee
+    pub fn update_base_fee(network: &str, base_fee_gwei: f64) {
+        NETWORK_BASE_FEE_GWEI
+            .with_label_values(&[network])
+            .set(base_fee_gwei);
+    }
+
+    /// Update priority fee percentiles
+    pub fn update_priority_fee_percentile(network: &str, percentile: &str, fee_gwei: f64) {
+        NETWORK_PRIORITY_FEE_PERCENTILES_GWEI
+            .with_label_values(&[network, percentile])
+            .set(fee_gwei);
+    }
+
+    /// Update network congestion level
+    pub fn update_congestion_level(network: &str, level: f64) {
+        let clamped_level = level.clamp(0.0, 100.0);
+        NETWORK_CONGESTION_LEVEL
+            .with_label_values(&[network])
+            .set(clamped_level);
+
+        if clamped_level > 80.0 {
+            warn!(
+                "High network congestion on {}: {:.1}%",
+                network, clamped_level
+            );
+        }
+    }
+
+    /// Update last block timestamp
+    pub fn update_last_block_timestamp(network: &str, timestamp: u64) {
+        LAST_BLOCK_TIMESTAMP
+            .with_label_values(&[network])
+            .set(timestamp as f64);
     }
 
     /// Get error type from error string

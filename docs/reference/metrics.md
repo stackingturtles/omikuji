@@ -37,19 +37,23 @@ Track why and when updates occur or are skipped.
 
 ### 3. Network/RPC Metrics
 
-Monitor blockchain network interactions.
+Monitor blockchain network interactions. These metrics are continuously updated by the NetworkHealthMonitor.
 
 | Metric Name | Type | Description | Labels |
 |------------|------|-------------|--------|
 | `omikuji_rpc_requests_total` | Counter | RPC request count | network, method, status |
 | `omikuji_rpc_request_latency_seconds` | Histogram | RPC request latency | network, method |
-| `omikuji_chain_head_block` | Gauge | Current block number | network |
-| `omikuji_chain_reorgs_total` | Counter | Chain reorganizations | network, depth |
-| `omikuji_network_sync_status` | Gauge | Sync status (0/1) | network |
+| `omikuji_chain_head_block` | Gauge | Current block number (updated every 30s) | network |
+| `omikuji_chain_reorgs_total` | Counter | Chain reorganizations detected | network, depth |
+| `omikuji_network_sync_status` | Gauge | Sync status (0/1, based on block timestamp) | network |
 | `omikuji_rpc_endpoint_health` | Gauge | Endpoint health (0/1) | network, endpoint |
-| `omikuji_block_time_seconds` | Gauge | Average block time | network |
+| `omikuji_block_time_seconds` | Gauge | Average block time (rolling 10-block average) | network |
 | `omikuji_pending_transactions` | Gauge | Pending transaction count | network, feed_name |
 | `omikuji_network_gas_price_gwei` | Gauge | Current gas price | network, percentile |
+| `omikuji_network_base_fee_gwei` | Gauge | Current base fee for EIP-1559 networks | network |
+| `omikuji_network_priority_fee_percentiles_gwei` | Gauge | Priority fee percentiles (p25, p50, p75, p90) | network, percentile |
+| `omikuji_network_congestion_level` | Gauge | Network congestion level (0=low, 100=high) | network |
+| `omikuji_last_block_timestamp` | Gauge | Unix timestamp of the last processed block | network |
 | `omikuji_rpc_connection_pool_size` | Gauge | Connection pool stats | network, state |
 | `omikuji_rpc_errors_total` | Counter | RPC errors by type | network, error_type, method |
 
@@ -290,3 +294,45 @@ route:
         severity: warning
       receiver: 'slack'
 ```
+
+## Network Health Monitoring
+
+The NetworkHealthMonitor component continuously monitors network health and updates metrics every 30 seconds (configurable). This ensures that network-specific metrics remain current for alerting and observability.
+
+### Monitored Metrics
+
+The NetworkHealthMonitor updates the following metrics:
+
+1. **Chain Head Block** - Current block number with automatic reorg detection
+2. **Block Time** - Rolling average of the last 10 blocks
+3. **Network Sync Status** - Determines if node is synced based on block timestamp
+4. **Gas Prices** - Base fee and priority fee percentiles for optimal transaction pricing
+5. **Network Congestion** - Calculated score (0-100) based on current gas prices
+6. **RPC Endpoint Health** - Validates each endpoint remains responsive
+
+### Example Prometheus Queries
+
+Monitor network health:
+```promql
+# Network congestion over time
+omikuji_network_congestion_level{network="ethereum"}
+
+# Average block time
+omikuji_block_time_seconds{network="ethereum"}
+
+# Check if network is synced
+omikuji_network_sync_status{network="ethereum"} == 0
+
+# Gas price percentiles for cost optimization
+omikuji_network_priority_fee_percentiles_gwei{network="ethereum", percentile="p50"}
+
+# Detect chain reorganizations
+increase(omikuji_chain_reorgs_total[1h]) > 0
+```
+
+### Configuration
+
+The NetworkHealthMonitor can be configured with:
+- `polling_interval_secs`: How often to check network health (default: 30)
+- `block_history_size`: Number of blocks to keep for averaging (default: 10)
+- `sync_threshold_secs`: Maximum age for a block to be considered synced (default: 120)

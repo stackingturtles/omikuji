@@ -1,6 +1,6 @@
 [package]
 name = "omikuji"
-version = "0.4.0"
+version = "0.5.2"
 edition = "2021"
 authors = ["Ijonas Kisselbach <ijonas@ijonas.com>"]
 description = "A lightweight EVM blockchain datafeed provider daemon"
@@ -29,7 +29,15 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 # Ethereum interaction
-alloy = { version = "0.8", features = ["full", "node-bindings", "signer-local", "provider-http", "provider-ws", "contract", "rpc"] }
+alloy = { version = "0.8", features = [
+  "full",
+  "node-bindings",
+  "signer-local",
+  "provider-http",
+  "provider-ws",
+  "contract",
+  "rpc",
+] }
 hex = "0.4"
 
 # HTTP client for external data
@@ -46,7 +54,12 @@ backoff = { version = "0.4", features = ["futures"] }
 jsonpath-rust = "0.3"
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "migrate"] }
+sqlx = { version = "0.7", features = [
+  "runtime-tokio-rustls",
+  "postgres",
+  "chrono",
+  "migrate",
+] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # Cron scheduling
