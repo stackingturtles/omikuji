@@ -1,3 +1,4 @@
+pub mod health_monitor;
 mod provider;
 #[cfg(test)]
 mod tests;
