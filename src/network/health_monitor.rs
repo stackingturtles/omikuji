@@ -150,43 +150,46 @@ impl NetworkHealthMonitor {
         let block_number = self.update_chain_head(network_name, &provider).await?;
 
         // Get block details for more metrics
-        if let Ok(Some(block)) = provider.get_block_by_number(block_number.into(), false.into()).await {
-                // Update block timestamp
-                let timestamp = block.header.timestamp;
-                NetworkMetrics::update_last_block_timestamp(network_name, timestamp);
+        if let Ok(Some(block)) = provider
+            .get_block_by_number(block_number.into(), false.into())
+            .await
+        {
+            // Update block timestamp
+            let timestamp = block.header.timestamp;
+            NetworkMetrics::update_last_block_timestamp(network_name, timestamp);
 
-                // Check sync status
-                let is_synced = self.check_sync_status(timestamp);
-                NetworkMetrics::update_sync_status(network_name, is_synced);
+            // Check sync status
+            let is_synced = self.check_sync_status(timestamp);
+            NetworkMetrics::update_sync_status(network_name, is_synced);
 
-                // Update block history and calculate average block time
-                let state = self
-                    .network_states
-                    .entry(network_name.to_string())
-                    .or_insert_with(NetworkState::new);
+            // Update block history and calculate average block time
+            let state = self
+                .network_states
+                .entry(network_name.to_string())
+                .or_insert_with(NetworkState::new);
 
-                state.add_block(
-                    BlockInfo {
-                        number: block_number,
-                        timestamp,
-                    },
-                    self.config.block_history_size,
-                );
+            state.add_block(
+                BlockInfo {
+                    number: block_number,
+                    timestamp,
+                },
+                self.config.block_history_size,
+            );
 
-                if let Some(avg_block_time) = state.calculate_average_block_time() {
-                    NetworkMetrics::update_block_time(network_name, avg_block_time);
-                }
+            if let Some(avg_block_time) = state.calculate_average_block_time() {
+                NetworkMetrics::update_block_time(network_name, avg_block_time);
+            }
 
-                // Update gas metrics if available
-                if let Some(base_fee) = block.header.base_fee_per_gas {
-                    let base_fee_gwei = base_fee as f64 / 1_000_000_000.0;
-                    NetworkMetrics::update_base_fee(network_name, base_fee_gwei);
+            // Update gas metrics if available
+            if let Some(base_fee) = block.header.base_fee_per_gas {
+                let base_fee_gwei = base_fee as f64 / 1_000_000_000.0;
+                NetworkMetrics::update_base_fee(network_name, base_fee_gwei);
 
-                    // Calculate congestion level based on base fee
-                    // This is a simple heuristic: higher base fee = more congestion
-                    let congestion = self.calculate_congestion_level(base_fee_gwei);
-                    NetworkMetrics::update_congestion_level(network_name, congestion);
-                }
+                // Calculate congestion level based on base fee
+                // This is a simple heuristic: higher base fee = more congestion
+                let congestion = self.calculate_congestion_level(base_fee_gwei);
+                NetworkMetrics::update_congestion_level(network_name, congestion);
+            }
         }
 
         // Update gas price and priority fee percentiles
@@ -258,7 +261,7 @@ impl NetworkHealthMonitor {
         // the fee_history RPC call to get actual percentiles
         if let Ok(gas_price) = provider.get_gas_price().await {
             let base_gwei = gas_price as f64 / 1_000_000_000.0;
-            
+
             // Simulate percentiles (in production, use actual fee_history data)
             NetworkMetrics::update_priority_fee_percentile(network_name, "p25", base_gwei * 0.8);
             NetworkMetrics::update_priority_fee_percentile(network_name, "p50", base_gwei);
@@ -274,7 +277,7 @@ impl NetworkHealthMonitor {
         // Simple heuristic: map base fee to congestion level
         // These thresholds can be adjusted based on network characteristics
         match base_fee_gwei {
-            fee if fee < 10.0 => fee * 2.0,           // 0-20% for fees under 10 gwei
+            fee if fee < 10.0 => fee * 2.0, // 0-20% for fees under 10 gwei
             fee if fee < 30.0 => 20.0 + (fee - 10.0), // 20-40% for 10-30 gwei
             fee if fee < 50.0 => 40.0 + (fee - 30.0) * 0.5, // 40-50% for 30-50 gwei
             fee if fee < 100.0 => 50.0 + (fee - 50.0) * 0.4, // 50-70% for 50-100 gwei

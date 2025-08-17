@@ -285,7 +285,6 @@ impl NetworkManager {
         }
     }
 
-
     /// Get the wallet address for a given network
     pub fn get_wallet_address(&self, network_name: &str) -> Result<Address> {
         self.wallet_addresses
