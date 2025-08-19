@@ -37,6 +37,32 @@ impl TransactionLogRepository {
         Self { pool }
     }
 
+    /// Get the timestamp of the last successful submission for a feed
+    pub async fn get_last_submission_time(
+        &self,
+        feed_name: &str,
+        network_name: &str,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let result = sqlx::query_as::<_, (DateTime<Utc>,)>(
+            r#"
+            SELECT created_at
+            FROM omikuji.transaction_log
+            WHERE feed_name = $1 
+              AND network_name = $2
+              AND status = 'success'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(feed_name)
+        .bind(network_name)
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch last submission time")?;
+
+        Ok(result.map(|r| r.0))
+    }
+
     /// Save a transaction log entry
     pub async fn save_transaction(&self, details: TransactionDetails) -> Result<i32> {
         let total_cost_wei = details.total_cost_wei.to_string();
@@ -255,5 +281,25 @@ mod tests {
             .error_message
             .unwrap()
             .contains("Insufficient funds"));
+    }
+
+    #[test]
+    fn test_get_last_submission_time_query() {
+        let query = r#"
+            SELECT created_at
+            FROM omikuji.transaction_log
+            WHERE feed_name = $1 
+              AND network_name = $2
+              AND status = 'success'
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#;
+
+        assert!(query.contains("SELECT created_at"));
+        assert!(query.contains("WHERE feed_name = $1"));
+        assert!(query.contains("AND network_name = $2"));
+        assert!(query.contains("AND status = 'success'"));
+        assert!(query.contains("ORDER BY created_at DESC"));
+        assert!(query.contains("LIMIT 1"));
     }
 }

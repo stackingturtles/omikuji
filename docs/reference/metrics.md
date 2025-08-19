@@ -173,6 +173,7 @@ Original metrics that have been integrated into the new structure.
 | `omikuji_contract_round` | Gauge | Contract round | feed, network |
 | `omikuji_feed_deviation_percent` | Gauge | Feed deviation | feed, network |
 | `omikuji_data_staleness_seconds` | Gauge | Data staleness | feed, network, data_type |
+| `omikuji_feed_last_submission_seconds` | Gauge | Seconds since this node last submitted a value to the feed contract (NaN if no history) | feed_name, network |
 | `omikuji_gas_used_total` | Counter | Total gas used | feed_name, network, status |
 | `omikuji_gas_price_gwei` | Histogram | Gas price | network, tx_type |
 | `omikuji_gas_efficiency_percent` | Gauge | Gas efficiency | feed_name, network |
@@ -336,3 +337,37 @@ The NetworkHealthMonitor can be configured with:
 - `polling_interval_secs`: How often to check network health (default: 30)
 - `block_history_size`: Number of blocks to keep for averaging (default: 10)
 - `sync_threshold_secs`: Maximum age for a block to be considered synced (default: 120)
+
+## Node-Specific Submission Tracking
+
+The `omikuji_feed_last_submission_seconds` metric tracks how long it has been since the current node last successfully submitted a value to each feed contract. This is particularly useful in multi-node oracle environments.
+
+### Use Cases
+
+1. **Monitor Node Health**: Identify nodes that are failing to submit updates
+2. **Multi-Oracle Coordination**: Track submission patterns across multiple oracle nodes
+3. **Alerting**: Create alerts when a node hasn't submitted for extended periods
+4. **Performance Analysis**: Analyze submission frequency and patterns
+
+### Example Prometheus Queries
+
+```promql
+# Alert when a node hasn't submitted for over 1 hour
+omikuji_feed_last_submission_seconds > 3600
+
+# Find feeds with no submission history (NaN values)
+omikuji_feed_last_submission_seconds != omikuji_feed_last_submission_seconds
+
+# Average time between submissions for a specific feed
+avg_over_time(omikuji_feed_last_submission_seconds{feed_name="eth_usd"}[1h])
+
+# Identify the most active submitter (lowest average time since submission)
+topk(5, avg by (feed_name) (omikuji_feed_last_submission_seconds))
+```
+
+### Notes
+
+- Returns `NaN` when no submission history exists for a feed
+- Updates with each datafeed monitoring cycle
+- Only tracks successful submissions (status='success' in transaction_log)
+- Requires database configuration with transaction logging enabled
