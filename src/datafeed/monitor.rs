@@ -163,6 +163,40 @@ impl FeedMonitor {
                         );
                     }
 
+                    // Update last submission time metric
+                    if let Some(ref tx_repo) = self.tx_log_repo {
+                        match tx_repo
+                            .get_last_submission_time(&self.datafeed.name, &self.datafeed.networks)
+                            .await
+                        {
+                            Ok(last_submission) => {
+                                let seconds_since = if let Some(last_time) = last_submission {
+                                    let now = chrono::Utc::now();
+                                    (now - last_time).num_seconds() as f64
+                                } else {
+                                    // No submission history
+                                    f64::NAN
+                                };
+
+                                FeedMetrics::set_last_submission_seconds(
+                                    &self.datafeed.name,
+                                    &self.datafeed.networks,
+                                    if seconds_since.is_nan() {
+                                        None
+                                    } else {
+                                        Some(seconds_since)
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to get last submission time for feed {}: {}",
+                                    self.datafeed.name, e
+                                );
+                            }
+                        }
+                    }
+
                     // Save to database if repository is available
                     if let Some(ref repository) = self.repository {
                         debug!(

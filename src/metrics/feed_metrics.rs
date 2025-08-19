@@ -58,6 +58,13 @@ lazy_static! {
         "Seconds since last successful data update",
         &["feed", "network", "data_type"]
     ).expect("Failed to create data_staleness_seconds metric");
+
+    /// Time since this node last submitted a value to the feed contract
+    pub static ref FEED_LAST_SUBMISSION_SECONDS: GaugeVec = register_gauge_vec!(
+        "omikuji_feed_last_submission_seconds",
+        "Seconds since this node last submitted a value to the feed contract",
+        &["feed_name", "network"]
+    ).expect("Failed to create feed_last_submission_seconds metric");
 }
 
 /// Feed metrics collector
@@ -161,6 +168,26 @@ impl FeedMetrics {
             "Recorded contract update for {} on {} at timestamp {}",
             feed_name, network, timestamp
         );
+    }
+
+    /// Update the time since last submission metric
+    pub fn set_last_submission_seconds(feed_name: &str, network: &str, seconds: Option<f64>) {
+        let value = seconds.unwrap_or(f64::NAN);
+        FEED_LAST_SUBMISSION_SECONDS
+            .with_label_values(&[feed_name, network])
+            .set(value);
+
+        if seconds.is_some() {
+            debug!(
+                "Updated last submission for {} on {}: {:.0} seconds ago",
+                feed_name, network, value
+            );
+        } else {
+            debug!(
+                "Feed {} on {} has no submission history",
+                feed_name, network
+            );
+        }
     }
 }
 
@@ -316,5 +343,21 @@ mod tests {
         // Test extreme balance values
         FeedMetrics::set_wallet_balance("rich", "0xrich", u128::MAX);
         FeedMetrics::set_wallet_balance("poor", "0xpoor", 0);
+    }
+
+    #[test]
+    fn test_last_submission_seconds_metric() {
+        // Test with valid submission time
+        FeedMetrics::set_last_submission_seconds("eth_usd", "ethereum", Some(300.0));
+        FeedMetrics::set_last_submission_seconds("btc_usd", "bitcoin", Some(3600.0));
+
+        // Test with no submission history (None)
+        FeedMetrics::set_last_submission_seconds("new_feed", "testnet", None);
+
+        // Test with zero seconds (just submitted)
+        FeedMetrics::set_last_submission_seconds("active_feed", "mainnet", Some(0.0));
+
+        // Test with large time gap
+        FeedMetrics::set_last_submission_seconds("stale_feed", "testnet", Some(86400.0));
     }
 }
