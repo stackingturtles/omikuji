@@ -299,6 +299,30 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         Ok(decoded._0)
     }
 
+    /// Get oracle round state to check eligibility and round info
+    pub async fn oracle_round_state(&self, oracle: Address, queried_round: u32) -> Result<(bool, u32, I256, u64, u64, u128, u8, u128)> {
+        let call = IFluxAggregator::oracleRoundStateCall {
+            _oracle: oracle,
+            _queriedRoundId: queried_round,
+        };
+        let tx = TransactionRequest::default()
+            .to(self.address)
+            .input(call.abi_encode().into());
+        let result = self.provider.call(&tx).block(BlockId::latest()).await?;
+
+        let decoded = IFluxAggregator::oracleRoundStateCall::abi_decode_returns(&result, true)?;
+        Ok((
+            decoded._eligibleToSubmit,
+            decoded._roundId,
+            decoded._latestSubmission,
+            decoded._startedAt,
+            decoded._timeout,
+            decoded._availableFunds,
+            decoded._oracleCount,
+            decoded._paymentAmount,
+        ))
+    }
+
     /// Submit a new price to the FluxAggregator contract with gas estimation and retry logic
     pub async fn submit_price_with_gas_estimation(
         &self,

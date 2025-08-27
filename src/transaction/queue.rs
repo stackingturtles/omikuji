@@ -14,7 +14,6 @@ use alloy::{
     rpc::types::TransactionRequest as AlloyTransactionRequest,
     signers::local::PrivateKeySigner,
     sol_types::SolCall,
-    transports::Transport,
 };
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -173,7 +172,7 @@ impl TransactionQueue {
         state: &Arc<QueueState>,
         feed_name: &str,
         contract_address: Address,
-        round_id: U256,
+        _round_id: U256,  // We'll get the correct round from oracle state
         value: I256,
         network: &str,
         gas_limit: Option<U256>,
@@ -192,6 +191,38 @@ impl TransactionQueue {
         let mut nonce_guard = nonce_tracker.lock().await;
         let (wallet_address, current_nonce) = *nonce_guard;
 
+        // Check oracle eligibility before proceeding
+        let provider = state.network_manager.get_provider(network)?;
+        let contract = IFluxAggregator::new(contract_address, provider.clone());
+        
+        // Check oracle round state to determine eligibility and correct round
+        let oracle_state = contract
+            .oracleRoundState(wallet_address, 0u32)
+            .call()
+            .await
+            .with_context(|| format!("Failed to get oracle round state for feed {}", feed_name))?;
+        
+        if !oracle_state._eligibleToSubmit {
+            // Release the nonce guard without incrementing
+            drop(nonce_guard);
+            
+            debug!(
+                "Oracle {} not eligible to submit to datafeed {} at this time",
+                wallet_address, feed_name
+            );
+            
+            // Return a response indicating the submission was skipped
+            return Ok(TransactionResponse {
+                tx_hash: "0x0".to_string(),
+                block_number: 0,
+                gas_used: 0,
+                success: false,
+            });
+        }
+        
+        // Use the round ID from oracle state
+        let round_id = U256::from(oracle_state._roundId);
+
         // Create provider with signer inline
         let rpc_url = state.network_manager.get_rpc_url(network)?;
         let private_key = state.network_manager.get_private_key(network)?;
@@ -209,7 +240,7 @@ impl TransactionQueue {
             .wallet(wallet)
             .on_http(url);
 
-        // Build transaction with explicit nonce
+        // Build transaction with explicit nonce and correct round ID from oracle state
         let call = IFluxAggregator::submitCall {
             _roundId: round_id,
             _submission: value,

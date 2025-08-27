@@ -380,17 +380,34 @@ impl<'a> ContractUpdater<'a> {
         value: f64,
         queue: &Arc<TransactionQueue>,
     ) -> Result<()> {
-        // Get current round ID first
+        // Get provider and contract
         let provider = self.network_manager.get_provider(&datafeed.networks)?;
         let address = parse_address(&datafeed.contract_address)?;
         let contract = FluxAggregatorContract::new(address, provider);
         
-        let latest_round = contract
-            .latest_round()
-            .await
-            .with_context(|| "Failed to get latest round from contract")?;
+        // Get wallet address to check oracle eligibility
+        let wallet_address = self
+            .network_manager
+            .get_wallet_address(&datafeed.networks)?;
         
-        let next_round = latest_round + U256::from(1);
+        // Check oracle round state to determine eligibility and correct round
+        let (eligible, round_id, _last_submission, _started_at, _timeout, _funds, _oracle_count, _payment) = 
+            contract
+                .oracle_round_state(wallet_address, 0)
+                .await
+                .with_context(|| "Failed to get oracle round state")?;
+        
+        if !eligible {
+            debug!(
+                "Oracle {} not eligible to submit to datafeed {} at this time",
+                wallet_address, datafeed.name
+            );
+            // This is normal behavior - just skip submission
+            return Ok(());
+        }
+        
+        // Use the round ID from oracle round state
+        let submission_round = U256::from(round_id);
 
         // Convert value to contract format
         let decimals = datafeed.decimals.unwrap_or(8);
@@ -405,7 +422,7 @@ impl<'a> ContractUpdater<'a> {
 
         info!(
             "Submitting to round {} with value {} (scaled from {}) via queue",
-            next_round, submission, value
+            submission_round, submission, value
         );
 
         // Get network config for max retries
@@ -421,7 +438,7 @@ impl<'a> ContractUpdater<'a> {
             transaction_type: TransactionType::DatafeedSubmission {
                 feed_name: datafeed.name.clone(),
                 contract_address: address,
-                round_id: next_round,
+                round_id: submission_round,
                 value: submission,
             },
             response_tx: tx,
@@ -481,13 +498,29 @@ impl<'a> ContractUpdater<'a> {
         let address = parse_address(&datafeed.contract_address)?;
         let contract = create_contract_with_provider(address, provider);
 
-        // Get current round ID
-        let latest_round = contract
-            .latest_round()
-            .await
-            .with_context(|| "Failed to get latest round from contract")?;
+        // Get wallet address for oracle eligibility check
+        let wallet_address = self
+            .network_manager
+            .get_wallet_address(&datafeed.networks)?;
 
-        let next_round = latest_round + U256::from(1);
+        // Check oracle round state to determine eligibility and correct round
+        let (eligible, round_id, _last_submission, _started_at, _timeout, _funds, _oracle_count, _payment) = 
+            contract
+                .oracle_round_state(wallet_address, 0)
+                .await
+                .with_context(|| "Failed to get oracle round state")?;
+        
+        if !eligible {
+            debug!(
+                "Oracle {} not eligible to submit to datafeed {} at this time",
+                wallet_address, datafeed.name
+            );
+            // This is normal behavior - just skip submission
+            return Ok(());
+        }
+
+        // Use the round ID from oracle round state
+        let submission_round = U256::from(round_id);
 
         // Convert value to contract format
         let decimals = datafeed.decimals.unwrap_or(8);
@@ -502,7 +535,7 @@ impl<'a> ContractUpdater<'a> {
 
         info!(
             "Submitting to round {} with value {} (scaled from {})",
-            next_round, submission, value
+            submission_round, submission, value
         );
 
         // Get network configuration for gas settings
@@ -524,7 +557,7 @@ impl<'a> ContractUpdater<'a> {
         // Submit the transaction with gas estimation
         match contract
             .submit_price_with_gas_estimation(
-                next_round,
+                submission_round,
                 submission,
                 network_config,
                 &datafeed.name,
