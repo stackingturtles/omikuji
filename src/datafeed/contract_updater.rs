@@ -20,7 +20,10 @@ use crate::database::TransactionLogRepository;
 use crate::gas_price::GasPriceManager;
 use crate::metrics::{FeedMetrics, SkipReason, UpdateMetrics, UpdateReason};
 use crate::network::NetworkManager;
+use crate::transaction::queue::TransactionQueue;
+use crate::transaction::{TransactionRequest, TransactionType};
 use crate::utils::{TransactionContext, TransactionHandler};
+use tokio::sync::oneshot;
 
 /// Handles contract updates based on time and deviation thresholds
 pub struct ContractUpdater<'a> {
@@ -28,6 +31,7 @@ pub struct ContractUpdater<'a> {
     config: &'a OmikujiConfig,
     tx_log_repo: Option<Arc<TransactionLogRepository>>,
     gas_price_manager: Option<&'a Arc<GasPriceManager>>,
+    transaction_queue: Option<&'a Arc<TransactionQueue>>,
 }
 
 impl<'a> ContractUpdater<'a> {
@@ -38,6 +42,7 @@ impl<'a> ContractUpdater<'a> {
             config,
             tx_log_repo: None,
             gas_price_manager: None,
+            transaction_queue: None,
         }
     }
 
@@ -52,12 +57,19 @@ impl<'a> ContractUpdater<'a> {
             config,
             tx_log_repo: Some(tx_log_repo),
             gas_price_manager: None,
+            transaction_queue: None,
         }
     }
 
     /// Sets the gas price manager
     pub fn with_gas_price_manager(mut self, gas_price_manager: &'a Arc<GasPriceManager>) -> Self {
         self.gas_price_manager = Some(gas_price_manager);
+        self
+    }
+
+    /// Sets the transaction queue
+    pub fn with_transaction_queue(mut self, queue: &'a Arc<TransactionQueue>) -> Self {
+        self.transaction_queue = Some(queue);
         self
     }
 
@@ -351,6 +363,117 @@ impl<'a> ContractUpdater<'a> {
             value, datafeed.contract_address, datafeed.networks
         );
 
+        // Check if we have a transaction queue - use it if available
+        if let Some(queue) = self.transaction_queue {
+            // Use the transaction queue for submission
+            return self.submit_value_via_queue(datafeed, value, queue).await;
+        }
+
+        // Fallback to direct submission (for backward compatibility)
+        self.submit_value_direct(datafeed, value).await
+    }
+
+    /// Submit value via transaction queue (new method)
+    async fn submit_value_via_queue(
+        &self,
+        datafeed: &Datafeed,
+        value: f64,
+        queue: &Arc<TransactionQueue>,
+    ) -> Result<()> {
+        // Get current round ID first
+        let provider = self.network_manager.get_provider(&datafeed.networks)?;
+        let address = parse_address(&datafeed.contract_address)?;
+        let contract = FluxAggregatorContract::new(address, provider);
+        
+        let latest_round = contract
+            .latest_round()
+            .await
+            .with_context(|| "Failed to get latest round from contract")?;
+        
+        let next_round = latest_round + U256::from(1);
+
+        // Convert value to contract format
+        let decimals = datafeed.decimals.unwrap_or(8);
+        let scaled_value = scale_value_for_contract(value, decimals);
+
+        // Validate against min/max bounds
+        validate_value_bounds(scaled_value, datafeed)?;
+
+        // Convert to I256 for contract
+        let submission =
+            I256::try_from(scaled_value).context("Failed to convert scaled value to I256")?;
+
+        info!(
+            "Submitting to round {} with value {} (scaled from {}) via queue",
+            next_round, submission, value
+        );
+
+        // Get network config for max retries
+        let network_config = self.get_network_config(datafeed)?;
+        let max_retries = network_config.gas_config.fee_bumping.max_retries as u32;
+
+        // Create a channel for the response
+        let (tx, rx) = oneshot::channel();
+
+        // Create transaction request
+        let request = TransactionRequest {
+            network: datafeed.networks.clone(),
+            transaction_type: TransactionType::DatafeedSubmission {
+                feed_name: datafeed.name.clone(),
+                contract_address: address,
+                round_id: next_round,
+                value: submission,
+            },
+            response_tx: tx,
+            gas_limit: None,
+            max_retries: Some(max_retries),
+        };
+
+        // Record update attempt
+        UpdateMetrics::record_update_attempt(
+            &datafeed.name,
+            &datafeed.networks,
+            false, // Will update to true if successful
+        );
+
+        // Submit to queue
+        queue.submit(request).await?;
+
+        // Wait for response
+        let response = rx
+            .await
+            .context("Failed to receive transaction response")?
+            .context("Transaction submission failed")?;
+
+        if response.success {
+            info!(
+                "Transaction successful: {} for datafeed {}",
+                response.tx_hash, datafeed.name
+            );
+            
+            // Record successful update
+            UpdateMetrics::record_update_attempt(
+                &datafeed.name,
+                &datafeed.networks,
+                true,
+            );
+            
+            Ok(())
+        } else {
+            error!(
+                "Transaction failed: {} for datafeed {}",
+                response.tx_hash, datafeed.name
+            );
+            
+            Err(anyhow::anyhow!(
+                "{}: Transaction failed",
+                errors::CONTRACT_SUBMISSION_FAILED
+            ))
+        }
+    }
+
+    /// Submit value directly (legacy method for backward compatibility)
+    async fn submit_value_direct(&self, datafeed: &Datafeed, value: f64) -> Result<()> {
         // Create provider with signer
         let provider = self.create_signer_provider(&datafeed.networks).await?;
 

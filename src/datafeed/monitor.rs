@@ -7,6 +7,7 @@ use crate::database::{FeedLogRepository, TransactionLogRepository};
 use crate::gas_price::GasPriceManager;
 use crate::metrics::{FeedMetrics, QualityMetrics, UpdateMetrics};
 use crate::network::NetworkManager;
+use crate::transaction::queue::TransactionQueue;
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,6 +23,7 @@ pub struct FeedMonitor {
     repository: Option<Arc<FeedLogRepository>>,
     tx_log_repo: Option<Arc<TransactionLogRepository>>,
     gas_price_manager: Option<Arc<GasPriceManager>>,
+    transaction_queue: Option<Arc<TransactionQueue>>,
     last_value: Option<f64>,
     last_check_time: Option<Instant>,
 }
@@ -44,6 +46,7 @@ impl FeedMonitor {
             repository,
             tx_log_repo,
             gas_price_manager: None,
+            transaction_queue: None,
             last_value: None,
             last_check_time: None,
         }
@@ -52,6 +55,12 @@ impl FeedMonitor {
     /// Sets the gas price manager for USD cost tracking
     pub fn with_gas_price_manager(mut self, gas_price_manager: Arc<GasPriceManager>) -> Self {
         self.gas_price_manager = Some(gas_price_manager);
+        self
+    }
+
+    /// Sets the transaction queue for coordinated submissions
+    pub fn with_transaction_queue(mut self, queue: Arc<TransactionQueue>) -> Self {
+        self.transaction_queue = Some(queue);
         self
     }
 
@@ -146,7 +155,7 @@ impl FeedMonitor {
                     self.last_check_time = Some(check_start);
 
                     // Update contract metrics (read current contract state)
-                    let updater = if let Some(ref tx_repo) = self.tx_log_repo {
+                    let mut updater = if let Some(ref tx_repo) = self.tx_log_repo {
                         ContractUpdater::with_tx_logging(
                             &self.network_manager,
                             &self.config,
@@ -155,6 +164,11 @@ impl FeedMonitor {
                     } else {
                         ContractUpdater::new(&self.network_manager, &self.config)
                     };
+                    
+                    // Add transaction queue if available
+                    if let Some(ref queue) = self.transaction_queue {
+                        updater = updater.with_transaction_queue(queue);
+                    }
 
                     if let Err(e) = updater.update_contract_metrics(&self.datafeed, value).await {
                         error!(
@@ -288,6 +302,11 @@ impl FeedMonitor {
         // Add gas price manager if available
         if let Some(ref gas_price_manager) = self.gas_price_manager {
             updater = updater.with_gas_price_manager(gas_price_manager);
+        }
+        
+        // Add transaction queue if available
+        if let Some(ref queue) = self.transaction_queue {
+            updater = updater.with_transaction_queue(queue);
         }
 
         // Check if update is needed (including timestamp safety check)

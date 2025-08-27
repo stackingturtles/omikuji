@@ -14,6 +14,7 @@ pub mod network;
 pub mod scheduled_tasks;
 #[cfg(test)]
 pub mod test_utils;
+pub mod transaction;
 pub mod ui;
 pub mod utils;
 pub mod wallet;
