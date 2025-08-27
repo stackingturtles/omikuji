@@ -45,7 +45,7 @@ struct QueueState {
     /// Gas price manager for cost tracking
     gas_price_manager: Option<Arc<GasPriceManager>>,
     /// Nonce tracking per network (network -> (wallet_address, current_nonce))
-    nonces: RwLock<HashMap<String, Mutex<(Address, u64)>>>,
+    nonces: RwLock<HashMap<String, Arc<Mutex<(Address, u64)>>>>,
 }
 
 impl TransactionQueue {
@@ -161,13 +161,18 @@ impl TransactionQueue {
     }
 
     /// Get or create nonce tracker for a network
+    /// 
+    /// IMPORTANT: This returns a shared Arc<Mutex<...>> that is used by all transactions
+    /// for the same network. This ensures nonce coordination - when one transaction
+    /// increments the nonce, all subsequent transactions see the updated value.
     async fn get_nonce_for_network(
         state: &Arc<QueueState>,
         network: &str,
     ) -> Result<Arc<Mutex<(Address, u64)>>> {
         let nonces = state.nonces.read().await;
         if let Some(nonce_mutex) = nonces.get(network) {
-            return Ok(Arc::new(Mutex::new(*nonce_mutex.lock().await)));
+            // Return a clone of the existing Arc (shares the same Mutex)
+            return Ok(nonce_mutex.clone());
         }
         drop(nonces);
 
@@ -176,7 +181,8 @@ impl TransactionQueue {
 
         // Double-check after acquiring write lock
         if let Some(nonce_mutex) = nonces.get(network) {
-            return Ok(Arc::new(Mutex::new(*nonce_mutex.lock().await)));
+            // Return a clone of the existing Arc (shares the same Mutex)
+            return Ok(nonce_mutex.clone());
         }
 
         // Get wallet address and initial nonce
@@ -189,10 +195,11 @@ impl TransactionQueue {
             network, initial_nonce, wallet_address
         );
 
-        let nonce_data = Mutex::new((wallet_address, initial_nonce));
-        nonces.insert(network.to_string(), nonce_data);
+        // Create Arc<Mutex<...>> that will be shared across all transactions for this network
+        let nonce_tracker = Arc::new(Mutex::new((wallet_address, initial_nonce)));
+        nonces.insert(network.to_string(), nonce_tracker.clone());
 
-        Ok(Arc::new(Mutex::new((wallet_address, initial_nonce))))
+        Ok(nonce_tracker)
     }
 
     /// Submit a datafeed value
@@ -218,6 +225,11 @@ impl TransactionQueue {
         let nonce_tracker = Self::get_nonce_for_network(state, network).await?;
         let mut nonce_guard = nonce_tracker.lock().await;
         let (wallet_address, current_nonce) = *nonce_guard;
+        
+        debug!(
+            "Got nonce {} for {} on {} (wallet: {})",
+            current_nonce, feed_name, network, wallet_address
+        );
 
         // Check oracle eligibility before proceeding
         let provider = state.network_manager.get_provider(network)?;
@@ -374,7 +386,12 @@ impl TransactionQueue {
         );
 
         // Increment nonce for next transaction
-        nonce_guard.1 += 1;
+        let new_nonce = current_nonce + 1;
+        nonce_guard.1 = new_nonce;
+        debug!(
+            "Incremented nonce for {} from {} to {}",
+            network, current_nonce, new_nonce
+        );
         drop(nonce_guard);
 
         // Wait for confirmation
@@ -439,7 +456,6 @@ impl TransactionQueue {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[tokio::test]
     async fn test_queue_creation() {
