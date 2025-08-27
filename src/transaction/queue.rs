@@ -432,6 +432,8 @@ impl TransactionQueue {
             TransactionHandler::new(receipt.clone(), context, network.to_string())
                 .with_gas_price_manager(state.gas_price_manager.as_ref())
                 .with_tx_log_repo(Some(tx_log_repo))
+                .with_gas_limit(gas_limit.unwrap_or(gas_estimate.gas_limit).to::<u64>())
+                .with_transaction_type(network_config.transaction_type.clone())
                 .process()
                 .await?;
         }
