@@ -454,18 +454,24 @@ impl<'a> ContractUpdater<'a> {
         );
 
         // Submit to queue
-        queue.submit(request).await?;
+        debug!(
+            "Submitting transaction request to queue for {} on {}",
+            datafeed.name, datafeed.networks
+        );
+        
+        queue.submit(request).await
+            .with_context(|| format!("Failed to submit request to queue for {}", datafeed.name))?;
 
         // Wait for response
         let response = rx
             .await
-            .context("Failed to receive transaction response")?
-            .context("Transaction submission failed")?;
+            .with_context(|| format!("Failed to receive transaction response for {}", datafeed.name))?
+            .with_context(|| format!("Transaction submission failed for {}", datafeed.name))?;
 
         if response.success {
             info!(
-                "Transaction successful: {} for datafeed {}",
-                response.tx_hash, datafeed.name
+                "Transaction successful: {} for datafeed {} (block: {}, gas used: {})",
+                response.tx_hash, datafeed.name, response.block_number, response.gas_used
             );
             
             // Record successful update
@@ -476,15 +482,24 @@ impl<'a> ContractUpdater<'a> {
             );
             
             Ok(())
+        } else if response.tx_hash == "0x0" {
+            // This indicates the oracle wasn't eligible - not an error
+            debug!(
+                "Oracle not eligible for datafeed {} - submission skipped",
+                datafeed.name
+            );
+            Ok(())
         } else {
             error!(
-                "Transaction failed: {} for datafeed {}",
-                response.tx_hash, datafeed.name
+                "Transaction failed: {} for datafeed {} (block: {}, gas used: {})",
+                response.tx_hash, datafeed.name, response.block_number, response.gas_used
             );
             
             Err(anyhow::anyhow!(
-                "{}: Transaction failed",
-                errors::CONTRACT_SUBMISSION_FAILED
+                "{}: Transaction failed for {} with hash {}",
+                errors::CONTRACT_SUBMISSION_FAILED,
+                datafeed.name,
+                response.tx_hash
             ))
         }
     }

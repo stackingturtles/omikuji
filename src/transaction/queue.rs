@@ -29,7 +29,8 @@ pub struct TransactionQueue {
     tx_sender: mpsc::Sender<TransactionRequest>,
     /// Handle to the processing task
     processor_handle: Option<JoinHandle<()>>,
-    /// Shared state for the queue
+    /// Shared state for the queue (used in shutdown)
+    #[allow(dead_code)]
     state: Arc<QueueState>,
 }
 
@@ -108,6 +109,11 @@ impl TransactionQueue {
                 round_id,
                 value,
             } => {
+                debug!(
+                    "Processing datafeed submission for {} on {}, round {}, value {}",
+                    feed_name, network, round_id, value
+                );
+                
                 let result = Self::submit_datafeed_value(
                     state,
                     feed_name,
@@ -119,6 +125,20 @@ impl TransactionQueue {
                     request.max_retries,
                 )
                 .await;
+
+                // Log the result
+                match &result {
+                    Ok(response) => {
+                        if response.success {
+                            debug!("Transaction successful for {}: {}", feed_name, response.tx_hash);
+                        } else {
+                            warn!("Transaction failed for {}: {}", feed_name, response.tx_hash);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Transaction error for {}: {:?}", feed_name, e);
+                    }
+                }
 
                 // Send response
                 let _ = request.response_tx.send(result);
@@ -141,7 +161,7 @@ impl TransactionQueue {
     ) -> Result<Arc<Mutex<(Address, u64)>>> {
         let nonces = state.nonces.read().await;
         if let Some(nonce_mutex) = nonces.get(network) {
-            return Ok(Arc::new(Mutex::new(nonce_mutex.lock().await.clone())));
+            return Ok(Arc::new(Mutex::new(*nonce_mutex.lock().await)));
         }
         drop(nonces);
 
@@ -150,7 +170,7 @@ impl TransactionQueue {
         
         // Double-check after acquiring write lock
         if let Some(nonce_mutex) = nonces.get(network) {
-            return Ok(Arc::new(Mutex::new(nonce_mutex.lock().await.clone())));
+            return Ok(Arc::new(Mutex::new(*nonce_mutex.lock().await)));
         }
 
         // Get wallet address and initial nonce
@@ -195,12 +215,24 @@ impl TransactionQueue {
         let provider = state.network_manager.get_provider(network)?;
         let contract = IFluxAggregator::new(contract_address, provider.clone());
         
+        debug!("Checking oracle eligibility for {} at address {}", feed_name, wallet_address);
+        
         // Check oracle round state to determine eligibility and correct round
-        let oracle_state = contract
+        let oracle_state = match contract
             .oracleRoundState(wallet_address, 0u32)
             .call()
-            .await
-            .with_context(|| format!("Failed to get oracle round state for feed {}", feed_name))?;
+            .await {
+            Ok(state) => state,
+            Err(e) => {
+                error!("Failed to get oracle round state for feed {}: {:?}", feed_name, e);
+                // Release nonce guard on error
+                drop(nonce_guard);
+                return Err(anyhow::anyhow!(
+                    "Failed to get oracle round state for {}: {}",
+                    feed_name, e
+                ));
+            }
+        };
         
         if !oracle_state._eligibleToSubmit {
             // Release the nonce guard without incrementing
@@ -288,22 +320,55 @@ impl TransactionQueue {
         }
 
         info!(
-            "Submitting transaction for {} on {} with nonce {}",
-            feed_name, network, current_nonce
+            "Submitting transaction for {} on {} with nonce {}, round {}, value {}",
+            feed_name, network, current_nonce, round_id, value
+        );
+        
+        debug!(
+            "Transaction details - Gas limit: {:?}, Max fee: {:?}, Priority fee: {:?}",
+            gas_limit.unwrap_or(gas_estimate.gas_limit),
+            gas_estimate.max_fee_per_gas,
+            gas_estimate.max_priority_fee_per_gas
         );
 
         // Send transaction
-        let pending_tx = provider.send_transaction(tx).await?;
-        let tx_hash = *pending_tx.tx_hash();
+        let pending_tx = match provider.send_transaction(tx.clone()).await {
+            Ok(tx) => tx,
+            Err(e) => {
+                error!(
+                    "Failed to send transaction for {} on {} with nonce {}: {:?}",
+                    feed_name, network, current_nonce, e
+                );
+                // Don't increment nonce on send failure
+                drop(nonce_guard);
+                return Err(anyhow::anyhow!(
+                    "Transaction send failed for {}: {}",
+                    feed_name, e
+                ));
+            }
+        };
         
-        info!("Transaction sent: 0x{:x} with nonce {}", tx_hash, current_nonce);
+        let tx_hash = *pending_tx.tx_hash();
+        info!("Transaction sent: 0x{:x} with nonce {} for {}", tx_hash, current_nonce, feed_name);
 
         // Increment nonce for next transaction
         nonce_guard.1 += 1;
         drop(nonce_guard);
 
         // Wait for confirmation
-        let receipt = pending_tx.get_receipt().await?;
+        let receipt = match pending_tx.get_receipt().await {
+            Ok(r) => r,
+            Err(e) => {
+                error!(
+                    "Failed to get receipt for transaction 0x{:x} ({}): {:?}",
+                    tx_hash, feed_name, e
+                );
+                return Err(anyhow::anyhow!(
+                    "Failed to get transaction receipt for {}: {}",
+                    feed_name, e
+                ));
+            }
+        };
 
         // Record metrics
         UpdateMetrics::record_update_attempt(feed_name, network, receipt.status());
