@@ -300,7 +300,11 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
     }
 
     /// Get oracle round state to check eligibility and round info
-    pub async fn oracle_round_state(&self, oracle: Address, queried_round: u32) -> Result<(bool, u32, I256, u64, u64, u128, u8, u128)> {
+    pub async fn oracle_round_state(
+        &self,
+        oracle: Address,
+        queried_round: u32,
+    ) -> Result<(bool, u32, I256, u64, u64, u128, u8, u128)> {
         let call = IFluxAggregator::oracleRoundStateCall {
             _oracle: oracle,
             _queriedRoundId: queried_round,

@@ -182,7 +182,7 @@ impl FeedManager {
         if let Some(ref gas_price_manager) = self.gas_price_manager {
             monitor = monitor.with_gas_price_manager(Arc::clone(gas_price_manager));
         }
-        
+
         // Set transaction queue if available
         if let Some(ref queue) = self.transaction_queue {
             monitor = monitor.with_transaction_queue(Arc::clone(queue));

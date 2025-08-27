@@ -384,19 +384,27 @@ impl<'a> ContractUpdater<'a> {
         let provider = self.network_manager.get_provider(&datafeed.networks)?;
         let address = parse_address(&datafeed.contract_address)?;
         let contract = FluxAggregatorContract::new(address, provider);
-        
+
         // Get wallet address to check oracle eligibility
         let wallet_address = self
             .network_manager
             .get_wallet_address(&datafeed.networks)?;
-        
+
         // Check oracle round state to determine eligibility and correct round
-        let (eligible, round_id, _last_submission, _started_at, _timeout, _funds, _oracle_count, _payment) = 
-            contract
-                .oracle_round_state(wallet_address, 0)
-                .await
-                .with_context(|| "Failed to get oracle round state")?;
-        
+        let (
+            eligible,
+            round_id,
+            _last_submission,
+            _started_at,
+            _timeout,
+            _funds,
+            _oracle_count,
+            _payment,
+        ) = contract
+            .oracle_round_state(wallet_address, 0)
+            .await
+            .with_context(|| "Failed to get oracle round state")?;
+
         if !eligible {
             debug!(
                 "Oracle {} not eligible to submit to datafeed {} at this time",
@@ -405,7 +413,7 @@ impl<'a> ContractUpdater<'a> {
             // This is normal behavior - just skip submission
             return Ok(());
         }
-        
+
         // Use the round ID from oracle round state
         let submission_round = U256::from(round_id);
 
@@ -458,14 +466,21 @@ impl<'a> ContractUpdater<'a> {
             "Submitting transaction request to queue for {} on {}",
             datafeed.name, datafeed.networks
         );
-        
-        queue.submit(request).await
+
+        queue
+            .submit(request)
+            .await
             .with_context(|| format!("Failed to submit request to queue for {}", datafeed.name))?;
 
         // Wait for response
         let response = rx
             .await
-            .with_context(|| format!("Failed to receive transaction response for {}", datafeed.name))?
+            .with_context(|| {
+                format!(
+                    "Failed to receive transaction response for {}",
+                    datafeed.name
+                )
+            })?
             .with_context(|| format!("Transaction submission failed for {}", datafeed.name))?;
 
         if response.success {
@@ -473,14 +488,10 @@ impl<'a> ContractUpdater<'a> {
                 "Transaction successful: {} for datafeed {} (block: {}, gas used: {})",
                 response.tx_hash, datafeed.name, response.block_number, response.gas_used
             );
-            
+
             // Record successful update
-            UpdateMetrics::record_update_attempt(
-                &datafeed.name,
-                &datafeed.networks,
-                true,
-            );
-            
+            UpdateMetrics::record_update_attempt(&datafeed.name, &datafeed.networks, true);
+
             Ok(())
         } else if response.tx_hash == "0x0" {
             // This indicates the oracle wasn't eligible - not an error
@@ -494,7 +505,7 @@ impl<'a> ContractUpdater<'a> {
                 "Transaction failed: {} for datafeed {} (block: {}, gas used: {})",
                 response.tx_hash, datafeed.name, response.block_number, response.gas_used
             );
-            
+
             Err(anyhow::anyhow!(
                 "{}: Transaction failed for {} with hash {}",
                 errors::CONTRACT_SUBMISSION_FAILED,
@@ -519,12 +530,20 @@ impl<'a> ContractUpdater<'a> {
             .get_wallet_address(&datafeed.networks)?;
 
         // Check oracle round state to determine eligibility and correct round
-        let (eligible, round_id, _last_submission, _started_at, _timeout, _funds, _oracle_count, _payment) = 
-            contract
-                .oracle_round_state(wallet_address, 0)
-                .await
-                .with_context(|| "Failed to get oracle round state")?;
-        
+        let (
+            eligible,
+            round_id,
+            _last_submission,
+            _started_at,
+            _timeout,
+            _funds,
+            _oracle_count,
+            _payment,
+        ) = contract
+            .oracle_round_state(wallet_address, 0)
+            .await
+            .with_context(|| "Failed to get oracle round state")?;
+
         if !eligible {
             debug!(
                 "Oracle {} not eligible to submit to datafeed {} at this time",

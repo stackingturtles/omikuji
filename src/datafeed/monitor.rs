@@ -164,7 +164,7 @@ impl FeedMonitor {
                     } else {
                         ContractUpdater::new(&self.network_manager, &self.config)
                     };
-                    
+
                     // Add transaction queue if available
                     if let Some(ref queue) = self.transaction_queue {
                         updater = updater.with_transaction_queue(queue);
@@ -303,7 +303,7 @@ impl FeedMonitor {
         if let Some(ref gas_price_manager) = self.gas_price_manager {
             updater = updater.with_gas_price_manager(gas_price_manager);
         }
-        
+
         // Add transaction queue if available
         if let Some(ref queue) = self.transaction_queue {
             updater = updater.with_transaction_queue(queue);

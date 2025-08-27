@@ -57,7 +57,7 @@ impl TransactionQueue {
         gas_price_manager: Option<Arc<GasPriceManager>>,
     ) -> Self {
         let (tx_sender, rx) = mpsc::channel::<TransactionRequest>(100);
-        
+
         let state = Arc::new(QueueState {
             config,
             network_manager,
@@ -98,9 +98,12 @@ impl TransactionQueue {
     }
 
     /// Process a single transaction
-    async fn process_transaction(request: TransactionRequest, state: &Arc<QueueState>) -> Result<()> {
+    async fn process_transaction(
+        request: TransactionRequest,
+        state: &Arc<QueueState>,
+    ) -> Result<()> {
         let network = &request.network;
-        
+
         // Process based on transaction type
         match &request.transaction_type {
             TransactionType::DatafeedSubmission {
@@ -113,7 +116,7 @@ impl TransactionQueue {
                     "Processing datafeed submission for {} on {}, round {}, value {}",
                     feed_name, network, round_id, value
                 );
-                
+
                 let result = Self::submit_datafeed_value(
                     state,
                     feed_name,
@@ -130,7 +133,10 @@ impl TransactionQueue {
                 match &result {
                     Ok(response) => {
                         if response.success {
-                            debug!("Transaction successful for {}: {}", feed_name, response.tx_hash);
+                            debug!(
+                                "Transaction successful for {}: {}",
+                                feed_name, response.tx_hash
+                            );
                         } else {
                             warn!("Transaction failed for {}: {}", feed_name, response.tx_hash);
                         }
@@ -167,7 +173,7 @@ impl TransactionQueue {
 
         // Initialize nonce for this network
         let mut nonces = state.nonces.write().await;
-        
+
         // Double-check after acquiring write lock
         if let Some(nonce_mutex) = nonces.get(network) {
             return Ok(Arc::new(Mutex::new(*nonce_mutex.lock().await)));
@@ -177,22 +183,24 @@ impl TransactionQueue {
         let wallet_address = state.network_manager.get_wallet_address(network)?;
         let provider = state.network_manager.get_provider(network)?;
         let initial_nonce = provider.get_transaction_count(wallet_address).await?;
-        
-        debug!("Initialized nonce for network {}: {} (address: {})", network, initial_nonce, wallet_address);
-        
+
+        debug!(
+            "Initialized nonce for network {}: {} (address: {})",
+            network, initial_nonce, wallet_address
+        );
+
         let nonce_data = Mutex::new((wallet_address, initial_nonce));
         nonces.insert(network.to_string(), nonce_data);
-        
+
         Ok(Arc::new(Mutex::new((wallet_address, initial_nonce))))
     }
-
 
     /// Submit a datafeed value
     async fn submit_datafeed_value(
         state: &Arc<QueueState>,
         feed_name: &str,
         contract_address: Address,
-        _round_id: U256,  // We'll get the correct round from oracle state
+        _round_id: U256, // We'll get the correct round from oracle state
         value: I256,
         network: &str,
         gas_limit: Option<U256>,
@@ -214,35 +222,39 @@ impl TransactionQueue {
         // Check oracle eligibility before proceeding
         let provider = state.network_manager.get_provider(network)?;
         let contract = IFluxAggregator::new(contract_address, provider.clone());
-        
-        debug!("Checking oracle eligibility for {} at address {}", feed_name, wallet_address);
-        
+
+        debug!(
+            "Checking oracle eligibility for {} at address {}",
+            feed_name, wallet_address
+        );
+
         // Check oracle round state to determine eligibility and correct round
-        let oracle_state = match contract
-            .oracleRoundState(wallet_address, 0u32)
-            .call()
-            .await {
+        let oracle_state = match contract.oracleRoundState(wallet_address, 0u32).call().await {
             Ok(state) => state,
             Err(e) => {
-                error!("Failed to get oracle round state for feed {}: {:?}", feed_name, e);
+                error!(
+                    "Failed to get oracle round state for feed {}: {:?}",
+                    feed_name, e
+                );
                 // Release nonce guard on error
                 drop(nonce_guard);
                 return Err(anyhow::anyhow!(
                     "Failed to get oracle round state for {}: {}",
-                    feed_name, e
+                    feed_name,
+                    e
                 ));
             }
         };
-        
+
         if !oracle_state._eligibleToSubmit {
             // Release the nonce guard without incrementing
             drop(nonce_guard);
-            
+
             debug!(
                 "Oracle {} not eligible to submit to datafeed {} at this time",
                 wallet_address, feed_name
             );
-            
+
             // Return a response indicating the submission was skipped
             return Ok(TransactionResponse {
                 tx_hash: "0x0".to_string(),
@@ -251,21 +263,21 @@ impl TransactionQueue {
                 success: false,
             });
         }
-        
+
         // Use the round ID from oracle state
         let round_id = U256::from(oracle_state._roundId);
 
         // Create provider with signer inline
         let rpc_url = state.network_manager.get_rpc_url(network)?;
         let private_key = state.network_manager.get_private_key(network)?;
-        
+
         let signer = private_key
             .parse::<PrivateKeySigner>()
             .with_context(|| "Failed to parse private key as signer")?;
 
         let wallet = EthereumWallet::from(signer);
-        let url = Url::parse(rpc_url)
-            .with_context(|| format!("Failed to parse RPC URL: {}", rpc_url))?;
+        let url =
+            Url::parse(rpc_url).with_context(|| format!("Failed to parse RPC URL: {}", rpc_url))?;
 
         let provider = ProviderBuilder::new()
             .with_recommended_fillers()
@@ -286,10 +298,16 @@ impl TransactionQueue {
 
         // Estimate gas
         let gas_estimator = GasEstimator::new(
-            Arc::new(state.network_manager.get_provider(network)?.as_ref().clone()),
+            Arc::new(
+                state
+                    .network_manager
+                    .get_provider(network)?
+                    .as_ref()
+                    .clone(),
+            ),
             network_config.clone(),
         );
-        
+
         let gas_estimate = gas_estimator.estimate_gas(&tx).await?;
         tx = tx.with_gas_limit(gas_limit.unwrap_or(gas_estimate.gas_limit).to::<u64>());
 
@@ -323,7 +341,7 @@ impl TransactionQueue {
             "Submitting transaction for {} on {} with nonce {}, round {}, value {}",
             feed_name, network, current_nonce, round_id, value
         );
-        
+
         debug!(
             "Transaction details - Gas limit: {:?}, Max fee: {:?}, Priority fee: {:?}",
             gas_limit.unwrap_or(gas_estimate.gas_limit),
@@ -343,13 +361,17 @@ impl TransactionQueue {
                 drop(nonce_guard);
                 return Err(anyhow::anyhow!(
                     "Transaction send failed for {}: {}",
-                    feed_name, e
+                    feed_name,
+                    e
                 ));
             }
         };
-        
+
         let tx_hash = *pending_tx.tx_hash();
-        info!("Transaction sent: 0x{:x} with nonce {} for {}", tx_hash, current_nonce, feed_name);
+        info!(
+            "Transaction sent: 0x{:x} with nonce {} for {}",
+            tx_hash, current_nonce, feed_name
+        );
 
         // Increment nonce for next transaction
         nonce_guard.1 += 1;
@@ -365,14 +387,15 @@ impl TransactionQueue {
                 );
                 return Err(anyhow::anyhow!(
                     "Failed to get transaction receipt for {}: {}",
-                    feed_name, e
+                    feed_name,
+                    e
                 ));
             }
         };
 
         // Record metrics
         UpdateMetrics::record_update_attempt(feed_name, network, receipt.status());
-        
+
         if receipt.status() {
             ContractMetrics::record_contract_write(
                 feed_name,
@@ -407,7 +430,7 @@ impl TransactionQueue {
     /// Shutdown the queue gracefully
     pub async fn shutdown(mut self) {
         drop(self.tx_sender);
-        
+
         if let Some(handle) = self.processor_handle.take() {
             let _ = handle.await;
         }

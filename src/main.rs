@@ -270,7 +270,7 @@ async fn main() -> Result<()> {
     let tx_log_repo = database_pool.as_ref().map(|pool| {
         Arc::new(database::transaction_repository::TransactionLogRepository::new(pool.clone()))
     });
-    
+
     let transaction_queue = Arc::new(omikuji::transaction::queue::TransactionQueue::new(
         config.clone(),
         Arc::clone(&network_manager),
@@ -288,7 +288,7 @@ async fn main() -> Result<()> {
         if let Some(ref gas_price_manager) = gas_price_manager {
             manager = manager.with_gas_price_manager(Arc::clone(gas_price_manager));
         }
-        
+
         // Add transaction queue for coordinated submissions
         manager = manager.with_transaction_queue(Arc::clone(&transaction_queue));
 
@@ -300,7 +300,7 @@ async fn main() -> Result<()> {
         if let Some(ref gas_price_manager) = gas_price_manager {
             manager = manager.with_gas_price_manager(Arc::clone(gas_price_manager));
         }
-        
+
         // Add transaction queue for coordinated submissions
         manager = manager.with_transaction_queue(Arc::clone(&transaction_queue));
 
