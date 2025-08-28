@@ -5,6 +5,7 @@ use crate::config::models::{Datafeed, OmikujiConfig};
 use crate::database::{DatabasePool, FeedLogRepository, TransactionLogRepository};
 use crate::gas_price::GasPriceManager;
 use crate::network::NetworkManager;
+use crate::transaction::queue::TransactionQueue;
 use alloy::primitives::I256;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -18,6 +19,7 @@ pub struct FeedManager {
     repository: Option<Arc<FeedLogRepository>>,
     tx_log_repo: Option<Arc<TransactionLogRepository>>,
     gas_price_manager: Option<Arc<GasPriceManager>>,
+    transaction_queue: Option<Arc<TransactionQueue>>,
     handles: Vec<JoinHandle<()>>,
 }
 
@@ -31,6 +33,7 @@ impl FeedManager {
             repository: None,
             tx_log_repo: None,
             gas_price_manager: None,
+            transaction_queue: None,
             handles: Vec::new(),
         }
     }
@@ -45,6 +48,12 @@ impl FeedManager {
     /// Sets the gas price manager for USD cost tracking
     pub fn with_gas_price_manager(mut self, gas_price_manager: Arc<GasPriceManager>) -> Self {
         self.gas_price_manager = Some(gas_price_manager);
+        self
+    }
+
+    /// Sets the transaction queue for coordinated submissions
+    pub fn with_transaction_queue(mut self, queue: Arc<TransactionQueue>) -> Self {
+        self.transaction_queue = Some(queue);
         self
     }
 
@@ -172,6 +181,11 @@ impl FeedManager {
         // Set gas price manager if available
         if let Some(ref gas_price_manager) = self.gas_price_manager {
             monitor = monitor.with_gas_price_manager(Arc::clone(gas_price_manager));
+        }
+
+        // Set transaction queue if available
+        if let Some(ref queue) = self.transaction_queue {
+            monitor = monitor.with_transaction_queue(Arc::clone(queue));
         }
 
         let feed_name = datafeed.name.clone();

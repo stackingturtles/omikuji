@@ -20,7 +20,10 @@ use crate::database::TransactionLogRepository;
 use crate::gas_price::GasPriceManager;
 use crate::metrics::{FeedMetrics, SkipReason, UpdateMetrics, UpdateReason};
 use crate::network::NetworkManager;
+use crate::transaction::queue::TransactionQueue;
+use crate::transaction::{TransactionRequest, TransactionType};
 use crate::utils::{TransactionContext, TransactionHandler};
+use tokio::sync::oneshot;
 
 /// Handles contract updates based on time and deviation thresholds
 pub struct ContractUpdater<'a> {
@@ -28,6 +31,7 @@ pub struct ContractUpdater<'a> {
     config: &'a OmikujiConfig,
     tx_log_repo: Option<Arc<TransactionLogRepository>>,
     gas_price_manager: Option<&'a Arc<GasPriceManager>>,
+    transaction_queue: Option<&'a Arc<TransactionQueue>>,
 }
 
 impl<'a> ContractUpdater<'a> {
@@ -38,6 +42,7 @@ impl<'a> ContractUpdater<'a> {
             config,
             tx_log_repo: None,
             gas_price_manager: None,
+            transaction_queue: None,
         }
     }
 
@@ -52,12 +57,19 @@ impl<'a> ContractUpdater<'a> {
             config,
             tx_log_repo: Some(tx_log_repo),
             gas_price_manager: None,
+            transaction_queue: None,
         }
     }
 
     /// Sets the gas price manager
     pub fn with_gas_price_manager(mut self, gas_price_manager: &'a Arc<GasPriceManager>) -> Self {
         self.gas_price_manager = Some(gas_price_manager);
+        self
+    }
+
+    /// Sets the transaction queue
+    pub fn with_transaction_queue(mut self, queue: &'a Arc<TransactionQueue>) -> Self {
+        self.transaction_queue = Some(queue);
         self
     }
 
@@ -351,6 +363,160 @@ impl<'a> ContractUpdater<'a> {
             value, datafeed.contract_address, datafeed.networks
         );
 
+        // Check if we have a transaction queue - use it if available
+        if let Some(queue) = self.transaction_queue {
+            // Use the transaction queue for submission
+            return self.submit_value_via_queue(datafeed, value, queue).await;
+        }
+
+        // Fallback to direct submission (for backward compatibility)
+        self.submit_value_direct(datafeed, value).await
+    }
+
+    /// Submit value via transaction queue (new method)
+    async fn submit_value_via_queue(
+        &self,
+        datafeed: &Datafeed,
+        value: f64,
+        queue: &Arc<TransactionQueue>,
+    ) -> Result<()> {
+        // Get provider and contract
+        let provider = self.network_manager.get_provider(&datafeed.networks)?;
+        let address = parse_address(&datafeed.contract_address)?;
+        let contract = FluxAggregatorContract::new(address, provider);
+
+        // Get wallet address to check oracle eligibility
+        let wallet_address = self
+            .network_manager
+            .get_wallet_address(&datafeed.networks)?;
+
+        // Check oracle round state to determine eligibility and correct round
+        let (
+            eligible,
+            round_id,
+            _last_submission,
+            _started_at,
+            _timeout,
+            _funds,
+            _oracle_count,
+            _payment,
+        ) = contract
+            .oracle_round_state(wallet_address, 0)
+            .await
+            .with_context(|| "Failed to get oracle round state")?;
+
+        if !eligible {
+            debug!(
+                "Oracle {} not eligible to submit to datafeed {} at this time",
+                wallet_address, datafeed.name
+            );
+            // This is normal behavior - just skip submission
+            return Ok(());
+        }
+
+        // Use the round ID from oracle round state
+        let submission_round = U256::from(round_id);
+
+        // Convert value to contract format
+        let decimals = datafeed.decimals.unwrap_or(8);
+        let scaled_value = scale_value_for_contract(value, decimals);
+
+        // Validate against min/max bounds
+        validate_value_bounds(scaled_value, datafeed)?;
+
+        // Convert to I256 for contract
+        let submission =
+            I256::try_from(scaled_value).context("Failed to convert scaled value to I256")?;
+
+        info!(
+            "Submitting to round {} with value {} (scaled from {}) via queue",
+            submission_round, submission, value
+        );
+
+        // Get network config for max retries
+        let network_config = self.get_network_config(datafeed)?;
+        let max_retries = network_config.gas_config.fee_bumping.max_retries as u32;
+
+        // Create a channel for the response
+        let (tx, rx) = oneshot::channel();
+
+        // Create transaction request
+        let request = TransactionRequest {
+            network: datafeed.networks.clone(),
+            transaction_type: TransactionType::DatafeedSubmission {
+                feed_name: datafeed.name.clone(),
+                contract_address: address,
+                round_id: submission_round,
+                value: submission,
+            },
+            response_tx: tx,
+            gas_limit: None,
+            max_retries: Some(max_retries),
+        };
+
+        // Record update attempt
+        UpdateMetrics::record_update_attempt(
+            &datafeed.name,
+            &datafeed.networks,
+            false, // Will update to true if successful
+        );
+
+        // Submit to queue
+        debug!(
+            "Submitting transaction request to queue for {} on {}",
+            datafeed.name, datafeed.networks
+        );
+
+        queue
+            .submit(request)
+            .await
+            .with_context(|| format!("Failed to submit request to queue for {}", datafeed.name))?;
+
+        // Wait for response
+        let response = rx
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to receive transaction response for {}",
+                    datafeed.name
+                )
+            })?
+            .with_context(|| format!("Transaction submission failed for {}", datafeed.name))?;
+
+        if response.success {
+            info!(
+                "Transaction successful: {} for datafeed {} (block: {}, gas used: {})",
+                response.tx_hash, datafeed.name, response.block_number, response.gas_used
+            );
+
+            // Record successful update
+            UpdateMetrics::record_update_attempt(&datafeed.name, &datafeed.networks, true);
+
+            Ok(())
+        } else if response.tx_hash == "0x0" {
+            // This indicates the oracle wasn't eligible - not an error
+            debug!(
+                "Oracle not eligible for datafeed {} - submission skipped",
+                datafeed.name
+            );
+            Ok(())
+        } else {
+            error!(
+                "Transaction failed: {} for datafeed {} (block: {}, gas used: {})",
+                response.tx_hash, datafeed.name, response.block_number, response.gas_used
+            );
+
+            Err(anyhow::anyhow!(
+                "{}: Transaction failed for {} with hash {}",
+                errors::CONTRACT_SUBMISSION_FAILED,
+                datafeed.name,
+                response.tx_hash
+            ))
+        }
+    }
+
+    /// Submit value directly (legacy method for backward compatibility)
+    async fn submit_value_direct(&self, datafeed: &Datafeed, value: f64) -> Result<()> {
         // Create provider with signer
         let provider = self.create_signer_provider(&datafeed.networks).await?;
 
@@ -358,13 +524,37 @@ impl<'a> ContractUpdater<'a> {
         let address = parse_address(&datafeed.contract_address)?;
         let contract = create_contract_with_provider(address, provider);
 
-        // Get current round ID
-        let latest_round = contract
-            .latest_round()
-            .await
-            .with_context(|| "Failed to get latest round from contract")?;
+        // Get wallet address for oracle eligibility check
+        let wallet_address = self
+            .network_manager
+            .get_wallet_address(&datafeed.networks)?;
 
-        let next_round = latest_round + U256::from(1);
+        // Check oracle round state to determine eligibility and correct round
+        let (
+            eligible,
+            round_id,
+            _last_submission,
+            _started_at,
+            _timeout,
+            _funds,
+            _oracle_count,
+            _payment,
+        ) = contract
+            .oracle_round_state(wallet_address, 0)
+            .await
+            .with_context(|| "Failed to get oracle round state")?;
+
+        if !eligible {
+            debug!(
+                "Oracle {} not eligible to submit to datafeed {} at this time",
+                wallet_address, datafeed.name
+            );
+            // This is normal behavior - just skip submission
+            return Ok(());
+        }
+
+        // Use the round ID from oracle round state
+        let submission_round = U256::from(round_id);
 
         // Convert value to contract format
         let decimals = datafeed.decimals.unwrap_or(8);
@@ -379,7 +569,7 @@ impl<'a> ContractUpdater<'a> {
 
         info!(
             "Submitting to round {} with value {} (scaled from {})",
-            next_round, submission, value
+            submission_round, submission, value
         );
 
         // Get network configuration for gas settings
@@ -401,7 +591,7 @@ impl<'a> ContractUpdater<'a> {
         // Submit the transaction with gas estimation
         match contract
             .submit_price_with_gas_estimation(
-                next_round,
+                submission_round,
                 submission,
                 network_config,
                 &datafeed.name,

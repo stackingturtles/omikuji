@@ -265,6 +265,20 @@ async fn main() -> Result<()> {
         None
     };
 
+    // Initialize transaction queue for coordinated nonce management
+    info!("Initializing transaction queue for coordinated submissions");
+    let tx_log_repo = database_pool.as_ref().map(|pool| {
+        Arc::new(database::transaction_repository::TransactionLogRepository::new(pool.clone()))
+    });
+
+    let transaction_queue = Arc::new(omikuji::transaction::queue::TransactionQueue::new(
+        config.clone(),
+        Arc::clone(&network_manager),
+        tx_log_repo,
+        gas_price_manager.clone(),
+    ));
+    info!("Transaction queue initialized successfully");
+
     // Initialize and start datafeed monitoring
     let mut feed_manager = if let Some(ref pool) = &database_pool {
         let mut manager = datafeed::FeedManager::new(config.clone(), Arc::clone(&network_manager))
@@ -275,6 +289,9 @@ async fn main() -> Result<()> {
             manager = manager.with_gas_price_manager(Arc::clone(gas_price_manager));
         }
 
+        // Add transaction queue for coordinated submissions
+        manager = manager.with_transaction_queue(Arc::clone(&transaction_queue));
+
         manager
     } else {
         let mut manager = datafeed::FeedManager::new(config.clone(), Arc::clone(&network_manager));
@@ -283,6 +300,9 @@ async fn main() -> Result<()> {
         if let Some(ref gas_price_manager) = gas_price_manager {
             manager = manager.with_gas_price_manager(Arc::clone(gas_price_manager));
         }
+
+        // Add transaction queue for coordinated submissions
+        manager = manager.with_transaction_queue(Arc::clone(&transaction_queue));
 
         manager
     };

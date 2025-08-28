@@ -178,8 +178,46 @@ impl<'a> TransactionHandler<'a> {
 
         // Log to transaction repository if available
         if let Some(tx_repo) = self.tx_log_repo {
-            // Transaction logging can be implemented here if needed
-            let _ = tx_repo; // Placeholder to avoid unused warning
+            // Create transaction details for logging
+            let gas_price_wei = effective_gas_price;
+            let gas_price_gwei = gas_price_wei as f64 / 1e9;
+            let total_cost_wei = (gas_used * gas_price_wei) as u128;
+            let efficiency_percent = if let Some(gas_limit) = self.gas_limit {
+                (gas_used as f64 / gas_limit as f64) * 100.0
+            } else {
+                100.0
+            };
+
+            let details = crate::metrics::gas_metrics::TransactionDetails {
+                feed_name: self.context.name().to_string(),
+                network: self.network.clone(),
+                tx_hash: format!("0x{:x}", tx_hash),
+                gas_limit: self.gas_limit.unwrap_or(gas_used as u64),
+                gas_used: gas_used as u64,
+                gas_price_gwei,
+                total_cost_wei,
+                efficiency_percent,
+                status: if self.receipt.status() {
+                    "success".to_string()
+                } else {
+                    "failed".to_string()
+                },
+                tx_type: self
+                    .transaction_type
+                    .clone()
+                    .unwrap_or_else(|| "eip1559".to_string()),
+                block_number: self.receipt.block_number.unwrap_or(0),
+                error_message: if !self.receipt.status() {
+                    Some("Transaction reverted".to_string())
+                } else {
+                    None
+                },
+            };
+
+            // Save transaction to database
+            if let Err(e) = tx_repo.save_transaction(details).await {
+                tracing::error!("Failed to save transaction log: {:?}", e);
+            }
         }
 
         Ok(())
