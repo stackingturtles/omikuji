@@ -24,6 +24,20 @@ use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+/// Type alias for nonce tracking: (wallet_address, current_nonce)
+type NonceInfo = Arc<Mutex<(Address, u64)>>;
+
+/// Parameters for submitting a datafeed value
+struct DatafeedSubmission {
+    feed_name: String,
+    contract_address: Address,
+    _round_id: U256, // We recalculate from oracle state
+    value: I256,
+    network: String,
+    gas_limit: Option<U256>,
+    max_retries: Option<u32>,
+}
+
 /// Manages transaction submission with proper nonce coordination
 pub struct TransactionQueue {
     /// Sender for submitting transactions
@@ -46,7 +60,7 @@ struct QueueState {
     /// Gas price manager for cost tracking
     gas_price_manager: Option<Arc<GasPriceManager>>,
     /// Nonce tracking per network (network -> (wallet_address, current_nonce))
-    nonces: RwLock<HashMap<String, Arc<Mutex<(Address, u64)>>>>,
+    nonces: RwLock<HashMap<String, NonceInfo>>,
 }
 
 impl TransactionQueue {
@@ -118,17 +132,17 @@ impl TransactionQueue {
                     feed_name, network, round_id, value
                 );
 
-                let result = Self::submit_datafeed_value(
-                    state,
-                    feed_name,
-                    *contract_address,
-                    *round_id,
-                    *value,
-                    network,
-                    request.gas_limit,
-                    request.max_retries,
-                )
-                .await;
+                let submission = DatafeedSubmission {
+                    feed_name: feed_name.clone(),
+                    contract_address: *contract_address,
+                    _round_id: *round_id,
+                    value: *value,
+                    network: network.clone(),
+                    gas_limit: request.gas_limit,
+                    max_retries: request.max_retries,
+                };
+
+                let result = Self::submit_datafeed_value(state, &submission).await;
 
                 // Log the result
                 match &result {
@@ -245,39 +259,33 @@ impl TransactionQueue {
     /// Submit a datafeed value
     async fn submit_datafeed_value(
         state: &Arc<QueueState>,
-        feed_name: &str,
-        contract_address: Address,
-        _round_id: U256, // We'll get the correct round from oracle state
-        value: I256,
-        network: &str,
-        gas_limit: Option<U256>,
-        max_retries: Option<u32>,
+        submission: &DatafeedSubmission,
     ) -> Result<TransactionResponse> {
         // Get network config
         let network_config = state
             .config
             .networks
             .iter()
-            .find(|n| n.name == network)
-            .ok_or_else(|| anyhow::anyhow!("Network {} not found in config", network))?;
+            .find(|n| n.name == submission.network)
+            .ok_or_else(|| anyhow::anyhow!("Network {} not found in config", submission.network))?;
 
         // Get nonce tracker for this network
-        let nonce_tracker = Self::get_nonce_for_network(state, network).await?;
+        let nonce_tracker = Self::get_nonce_for_network(state, &submission.network).await?;
         let mut nonce_guard = nonce_tracker.lock().await;
         let (wallet_address, current_nonce) = *nonce_guard;
 
         debug!(
             "Got nonce {} for {} on {} (wallet: {})",
-            current_nonce, feed_name, network, wallet_address
+            current_nonce, submission.feed_name, submission.network, wallet_address
         );
 
         // Check oracle eligibility before proceeding
-        let provider = state.network_manager.get_provider(network)?;
-        let contract = IFluxAggregator::new(contract_address, provider.clone());
+        let provider = state.network_manager.get_provider(&submission.network)?;
+        let contract = IFluxAggregator::new(submission.contract_address, provider.clone());
 
         debug!(
             "Checking oracle eligibility for {} at address {}",
-            feed_name, wallet_address
+            submission.feed_name, wallet_address
         );
 
         // Check oracle round state to determine eligibility and correct round
@@ -286,13 +294,13 @@ impl TransactionQueue {
             Err(e) => {
                 error!(
                     "Failed to get oracle round state for feed {}: {:?}",
-                    feed_name, e
+                    submission.feed_name, e
                 );
                 // Release nonce guard on error
                 drop(nonce_guard);
                 return Err(anyhow::anyhow!(
                     "Failed to get oracle round state for {}: {}",
-                    feed_name,
+                    submission.feed_name,
                     e
                 ));
             }
@@ -304,7 +312,7 @@ impl TransactionQueue {
 
             debug!(
                 "Oracle {} not eligible to submit to datafeed {} at this time",
-                wallet_address, feed_name
+                wallet_address, submission.feed_name
             );
 
             // Return a response indicating the submission was skipped
@@ -320,8 +328,8 @@ impl TransactionQueue {
         let round_id = U256::from(oracle_state._roundId);
 
         // Create provider with signer inline
-        let rpc_url = state.network_manager.get_rpc_url(network)?;
-        let private_key = state.network_manager.get_private_key(network)?;
+        let rpc_url = state.network_manager.get_rpc_url(&submission.network)?;
+        let private_key = state.network_manager.get_private_key(&submission.network)?;
 
         let signer = private_key
             .parse::<PrivateKeySigner>()
@@ -339,11 +347,11 @@ impl TransactionQueue {
         // Build transaction with explicit nonce and correct round ID from oracle state
         let call = IFluxAggregator::submitCall {
             _roundId: round_id,
-            _submission: value,
+            _submission: submission.value,
         };
 
         let mut tx = AlloyTransactionRequest::default()
-            .to(contract_address)
+            .to(submission.contract_address)
             .input(call.abi_encode().into())
             .from(wallet_address)
             .nonce(current_nonce); // Set explicit nonce
@@ -353,7 +361,7 @@ impl TransactionQueue {
             Arc::new(
                 state
                     .network_manager
-                    .get_provider(network)?
+                    .get_provider(&submission.network)?
                     .as_ref()
                     .clone(),
             ),
@@ -361,7 +369,12 @@ impl TransactionQueue {
         );
 
         let gas_estimate = gas_estimator.estimate_gas(&tx).await?;
-        tx = tx.with_gas_limit(gas_limit.unwrap_or(gas_estimate.gas_limit).to::<u64>());
+        tx = tx.with_gas_limit(
+            submission
+                .gas_limit
+                .unwrap_or(gas_estimate.gas_limit)
+                .to::<u64>(),
+        );
 
         // Apply gas settings based on transaction type
         match network_config.transaction_type.to_lowercase().as_str() {
@@ -390,19 +403,19 @@ impl TransactionQueue {
         }
 
         // Retry logic for transaction submission
-        let max_retries = max_retries.unwrap_or(3);
+        let max_retries = submission.max_retries.unwrap_or(3);
         let mut retries = 0;
         let mut current_tx_nonce = current_nonce;
 
         let pending_tx = loop {
             info!(
                 "Submitting transaction for {} on {} with nonce {}, round {}, value {} (attempt {}/{})",
-                feed_name, network, current_tx_nonce, round_id, value, retries + 1, max_retries + 1
+                submission.feed_name, submission.network, current_tx_nonce, round_id, submission.value, retries + 1, max_retries + 1
             );
 
             debug!(
                 "Transaction details - Gas limit: {:?}, Max fee: {:?}, Priority fee: {:?}",
-                gas_limit.unwrap_or(gas_estimate.gas_limit),
+                submission.gas_limit.unwrap_or(gas_estimate.gas_limit),
                 gas_estimate.max_fee_per_gas,
                 gas_estimate.max_priority_fee_per_gas
             );
@@ -419,7 +432,7 @@ impl TransactionQueue {
                         "Transaction sent: 0x{:x} with nonce {} for {}",
                         *pending.tx_hash(),
                         current_tx_nonce,
-                        feed_name
+                        submission.feed_name
                     );
 
                     // Successfully sent - update nonce and exit retry loop
@@ -427,7 +440,7 @@ impl TransactionQueue {
                     nonce_guard.1 = new_nonce;
                     debug!(
                         "Incremented nonce for {} from {} to {}",
-                        network, current_tx_nonce, new_nonce
+                        submission.network, current_tx_nonce, new_nonce
                     );
                     drop(nonce_guard);
                     break pending;
@@ -439,8 +452,8 @@ impl TransactionQueue {
                     if retries < max_retries && Self::is_recoverable_error(&error) {
                         warn!(
                             "Transaction failed for {} on {} with nonce {}: {} (attempt {}/{})",
-                            feed_name,
-                            network,
+                            submission.feed_name,
+                            submission.network,
                             current_tx_nonce,
                             e,
                             retries + 1,
@@ -452,14 +465,14 @@ impl TransactionQueue {
                             info!("Detected nonce too low error, refreshing nonce from blockchain");
 
                             // Query blockchain for current nonce
-                            match state.network_manager.get_provider(network) {
+                            match state.network_manager.get_provider(&submission.network) {
                                 Ok(fresh_provider) => {
                                     match fresh_provider.get_transaction_count(wallet_address).await
                                     {
                                         Ok(fresh_nonce) => {
                                             info!(
                                                 "Refreshed nonce for {} from {} to {} (blockchain reported: {})",
-                                                network, current_tx_nonce, fresh_nonce, fresh_nonce
+                                                submission.network, current_tx_nonce, fresh_nonce, fresh_nonce
                                             );
                                             current_tx_nonce = fresh_nonce;
                                             nonce_guard.1 = fresh_nonce;
@@ -494,12 +507,12 @@ impl TransactionQueue {
                     // Not recoverable or out of retries
                     error!(
                         "Failed to send transaction for {} on {} with nonce {} after {} attempts: {:?}",
-                        feed_name, network, current_tx_nonce, retries + 1, e
+                        submission.feed_name, submission.network, current_tx_nonce, retries + 1, e
                     );
                     drop(nonce_guard);
                     return Err(anyhow::anyhow!(
                         "Transaction send failed for {} after {} attempts: {}",
-                        feed_name,
+                        submission.feed_name,
                         retries + 1,
                         e
                     ));
@@ -515,23 +528,27 @@ impl TransactionQueue {
             Err(e) => {
                 error!(
                     "Failed to get receipt for transaction 0x{:x} ({}): {:?}",
-                    tx_hash, feed_name, e
+                    tx_hash, submission.feed_name, e
                 );
                 return Err(anyhow::anyhow!(
                     "Failed to get transaction receipt for {}: {}",
-                    feed_name,
+                    submission.feed_name,
                     e
                 ));
             }
         };
 
         // Record metrics
-        UpdateMetrics::record_update_attempt(feed_name, network, receipt.status());
+        UpdateMetrics::record_update_attempt(
+            &submission.feed_name,
+            &submission.network,
+            receipt.status(),
+        );
 
         if receipt.status() {
             ContractMetrics::record_contract_write(
-                feed_name,
-                network,
+                &submission.feed_name,
+                &submission.network,
                 true,
                 std::time::Duration::from_secs(1), // TODO: Track actual duration
                 Some(&format!("0x{:x}", tx_hash)),
@@ -541,13 +558,18 @@ impl TransactionQueue {
         // Use transaction handler for processing
         if let Some(tx_log_repo) = &state.tx_log_repo {
             let context = TransactionContext::Datafeed {
-                feed_name: feed_name.to_string(),
+                feed_name: submission.feed_name.clone(),
             };
 
-            TransactionHandler::new(receipt.clone(), context, network.to_string())
+            TransactionHandler::new(receipt.clone(), context, submission.network.clone())
                 .with_gas_price_manager(state.gas_price_manager.as_ref())
                 .with_tx_log_repo(Some(tx_log_repo))
-                .with_gas_limit(gas_limit.unwrap_or(gas_estimate.gas_limit).to::<u64>())
+                .with_gas_limit(
+                    submission
+                        .gas_limit
+                        .unwrap_or(gas_estimate.gas_limit)
+                        .to::<u64>(),
+                )
                 .with_transaction_type(network_config.transaction_type.clone())
                 .process()
                 .await?;

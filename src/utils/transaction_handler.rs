@@ -181,7 +181,7 @@ impl<'a> TransactionHandler<'a> {
             // Create transaction details for logging
             let gas_price_wei = effective_gas_price;
             let gas_price_gwei = gas_price_wei as f64 / 1e9;
-            let total_cost_wei = (gas_used * gas_price_wei) as u128;
+            let total_cost_wei = gas_used * gas_price_wei;
             let efficiency_percent = if let Some(gas_limit) = self.gas_limit {
                 (gas_used as f64 / gas_limit as f64) * 100.0
             } else {
