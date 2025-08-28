@@ -197,13 +197,20 @@ impl<'a> TransactionHandler<'a> {
                 gas_price_gwei,
                 total_cost_wei,
                 efficiency_percent,
-                status: if self.receipt.status() { "success".to_string() } else { "failed".to_string() },
-                tx_type: self.transaction_type.clone().unwrap_or_else(|| "eip1559".to_string()),
+                status: if self.receipt.status() {
+                    "success".to_string()
+                } else {
+                    "failed".to_string()
+                },
+                tx_type: self
+                    .transaction_type
+                    .clone()
+                    .unwrap_or_else(|| "eip1559".to_string()),
                 block_number: self.receipt.block_number.unwrap_or(0),
-                error_message: if !self.receipt.status() { 
-                    Some("Transaction reverted".to_string()) 
-                } else { 
-                    None 
+                error_message: if !self.receipt.status() {
+                    Some("Transaction reverted".to_string())
+                } else {
+                    None
                 },
             };
 

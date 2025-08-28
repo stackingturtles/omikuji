@@ -164,42 +164,44 @@ impl TransactionQueue {
     /// Check if an error indicates nonce is too low
     fn is_nonce_too_low_error(error: &anyhow::Error) -> bool {
         let error_str = error.to_string().to_lowercase();
-        error_str.contains("nonce too low") || 
-        error_str.contains("nonce_too_low") ||
-        error_str.contains("already known") ||
-        error_str.contains("replacement transaction underpriced")
+        error_str.contains("nonce too low")
+            || error_str.contains("nonce_too_low")
+            || error_str.contains("already known")
+            || error_str.contains("replacement transaction underpriced")
     }
 
     /// Check if an error is recoverable (worth retrying)
     fn is_recoverable_error(error: &anyhow::Error) -> bool {
         let error_str = error.to_string().to_lowercase();
-        
+
         // Nonce errors are recoverable
         if Self::is_nonce_too_low_error(error) {
             return true;
         }
-        
+
         // Network errors are recoverable
-        if error_str.contains("timeout") || 
-           error_str.contains("connection") ||
-           error_str.contains("network") {
+        if error_str.contains("timeout")
+            || error_str.contains("connection")
+            || error_str.contains("network")
+        {
             return true;
         }
-        
+
         // These errors are NOT recoverable
-        if error_str.contains("insufficient funds") ||
-           error_str.contains("revert") ||
-           error_str.contains("invalid") ||
-           error_str.contains("gas required exceeds") {
+        if error_str.contains("insufficient funds")
+            || error_str.contains("revert")
+            || error_str.contains("invalid")
+            || error_str.contains("gas required exceeds")
+        {
             return false;
         }
-        
+
         // Default to not retrying unknown errors
         false
     }
 
     /// Get or create nonce tracker for a network
-    /// 
+    ///
     /// IMPORTANT: This returns a shared Arc<Mutex<...>> that is used by all transactions
     /// for the same network. This ensures nonce coordination - when one transaction
     /// increments the nonce, all subsequent transactions see the updated value.
@@ -263,7 +265,7 @@ impl TransactionQueue {
         let nonce_tracker = Self::get_nonce_for_network(state, network).await?;
         let mut nonce_guard = nonce_tracker.lock().await;
         let (wallet_address, current_nonce) = *nonce_guard;
-        
+
         debug!(
             "Got nonce {} for {} on {} (wallet: {})",
             current_nonce, feed_name, network, wallet_address
@@ -391,7 +393,7 @@ impl TransactionQueue {
         let max_retries = max_retries.unwrap_or(3);
         let mut retries = 0;
         let mut current_tx_nonce = current_nonce;
-        
+
         let pending_tx = loop {
             info!(
                 "Submitting transaction for {} on {} with nonce {}, round {}, value {} (attempt {}/{})",
@@ -404,7 +406,7 @@ impl TransactionQueue {
                 gas_estimate.max_fee_per_gas,
                 gas_estimate.max_priority_fee_per_gas
             );
-            
+
             // Update transaction with current nonce if retrying
             if retries > 0 {
                 tx = tx.with_nonce(current_tx_nonce);
@@ -415,9 +417,11 @@ impl TransactionQueue {
                 Ok(pending) => {
                     info!(
                         "Transaction sent: 0x{:x} with nonce {} for {}",
-                        *pending.tx_hash(), current_tx_nonce, feed_name
+                        *pending.tx_hash(),
+                        current_tx_nonce,
+                        feed_name
                     );
-                    
+
                     // Successfully sent - update nonce and exit retry loop
                     let new_nonce = current_tx_nonce + 1;
                     nonce_guard.1 = new_nonce;
@@ -427,25 +431,31 @@ impl TransactionQueue {
                     );
                     drop(nonce_guard);
                     break pending;
-                },
+                }
                 Err(e) => {
                     let error = anyhow::anyhow!("{}", e);
-                    
+
                     // Check if this is a recoverable error and we have retries left
                     if retries < max_retries && Self::is_recoverable_error(&error) {
                         warn!(
                             "Transaction failed for {} on {} with nonce {}: {} (attempt {}/{})",
-                            feed_name, network, current_tx_nonce, e, retries + 1, max_retries + 1
+                            feed_name,
+                            network,
+                            current_tx_nonce,
+                            e,
+                            retries + 1,
+                            max_retries + 1
                         );
-                        
+
                         // If it's a nonce error, refresh nonce from blockchain
                         if Self::is_nonce_too_low_error(&error) {
                             info!("Detected nonce too low error, refreshing nonce from blockchain");
-                            
+
                             // Query blockchain for current nonce
                             match state.network_manager.get_provider(network) {
                                 Ok(fresh_provider) => {
-                                    match fresh_provider.get_transaction_count(wallet_address).await {
+                                    match fresh_provider.get_transaction_count(wallet_address).await
+                                    {
                                         Ok(fresh_nonce) => {
                                             info!(
                                                 "Refreshed nonce for {} from {} to {} (blockchain reported: {})",
@@ -453,14 +463,17 @@ impl TransactionQueue {
                                             );
                                             current_tx_nonce = fresh_nonce;
                                             nonce_guard.1 = fresh_nonce;
-                                        },
+                                        }
                                         Err(e) => {
-                                            error!("Failed to refresh nonce from blockchain: {}", e);
+                                            error!(
+                                                "Failed to refresh nonce from blockchain: {}",
+                                                e
+                                            );
                                             // Continue with incremented nonce as fallback
                                             current_tx_nonce += 1;
                                         }
                                     }
-                                },
+                                }
                                 Err(e) => {
                                     error!("Failed to get provider for nonce refresh: {}", e);
                                     // Continue with incremented nonce as fallback
@@ -468,16 +481,16 @@ impl TransactionQueue {
                                 }
                             }
                         }
-                        
+
                         retries += 1;
-                        
+
                         // Exponential backoff: 100ms, 200ms, 400ms
                         let delay = Duration::from_millis(100 * (1 << retries));
                         debug!("Retrying after {:?} delay", delay);
                         sleep(delay).await;
                         continue;
                     }
-                    
+
                     // Not recoverable or out of retries
                     error!(
                         "Failed to send transaction for {} on {} with nonce {} after {} attempts: {:?}",
@@ -486,12 +499,14 @@ impl TransactionQueue {
                     drop(nonce_guard);
                     return Err(anyhow::anyhow!(
                         "Transaction send failed for {} after {} attempts: {}",
-                        feed_name, retries + 1, e
+                        feed_name,
+                        retries + 1,
+                        e
                     ));
                 }
             }
         };
-        
+
         let tx_hash = *pending_tx.tx_hash();
 
         // Wait for confirmation
@@ -565,16 +580,18 @@ mod tests {
         // Test various nonce error messages
         let nonce_low_err = anyhow::anyhow!("nonce too low");
         assert!(TransactionQueue::is_nonce_too_low_error(&nonce_low_err));
-        
+
         let nonce_low_internal = anyhow::anyhow!("INTERNAL_ERROR: nonce too low");
-        assert!(TransactionQueue::is_nonce_too_low_error(&nonce_low_internal));
-        
+        assert!(TransactionQueue::is_nonce_too_low_error(
+            &nonce_low_internal
+        ));
+
         let already_known = anyhow::anyhow!("transaction already known");
         assert!(TransactionQueue::is_nonce_too_low_error(&already_known));
-        
+
         let replacement = anyhow::anyhow!("replacement transaction underpriced");
         assert!(TransactionQueue::is_nonce_too_low_error(&replacement));
-        
+
         let not_nonce = anyhow::anyhow!("insufficient funds");
         assert!(!TransactionQueue::is_nonce_too_low_error(&not_nonce));
     }
@@ -584,21 +601,21 @@ mod tests {
         // Nonce errors are recoverable
         let nonce_err = anyhow::anyhow!("nonce too low");
         assert!(TransactionQueue::is_recoverable_error(&nonce_err));
-        
+
         // Network errors are recoverable
         let timeout_err = anyhow::anyhow!("request timeout");
         assert!(TransactionQueue::is_recoverable_error(&timeout_err));
-        
+
         let connection_err = anyhow::anyhow!("connection refused");
         assert!(TransactionQueue::is_recoverable_error(&connection_err));
-        
+
         // These should NOT be recoverable
         let funds_err = anyhow::anyhow!("insufficient funds for gas");
         assert!(!TransactionQueue::is_recoverable_error(&funds_err));
-        
+
         let revert_err = anyhow::anyhow!("execution reverted");
         assert!(!TransactionQueue::is_recoverable_error(&revert_err));
-        
+
         let gas_err = anyhow::anyhow!("gas required exceeds limit");
         assert!(!TransactionQueue::is_recoverable_error(&gas_err));
     }
