@@ -102,6 +102,7 @@ pub enum SkipReason {
     TooSoon,
     NoChange,
     BelowThreshold,
+    TimestampStale,
     Error,
 }
 
@@ -112,6 +113,7 @@ impl SkipReason {
             SkipReason::TooSoon => "too_soon",
             SkipReason::NoChange => "no_change",
             SkipReason::BelowThreshold => "below_threshold",
+            SkipReason::TimestampStale => "timestamp_stale",
             SkipReason::Error => "error",
         }
     }
@@ -149,6 +151,7 @@ impl UpdateMetrics {
                 "too_soon",
                 "no_change",
                 "below_threshold",
+                "timestamp_stale",
                 "error",
             ] {
                 CONSECUTIVE_SKIPPED_UPDATES

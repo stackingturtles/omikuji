@@ -270,8 +270,8 @@ impl<'a> ContractUpdater<'a> {
 
         // Apply timestamp safety check if enabled
         if datafeed.enable_timestamp_safety_check {
-            debug!(
-                "Timestamp safety check enabled for datafeed {} with feed timestamp {}",
+            info!(
+                "Timestamp safety check ENABLED for datafeed {} (will verify local data is newer than on-chain): local timestamp = {}",
                 datafeed.name, feed_timestamp
             );
 
@@ -280,7 +280,7 @@ impl<'a> ContractUpdater<'a> {
                 Ok(on_chain_timestamp) => {
                     if feed_timestamp <= on_chain_timestamp {
                         info!(
-                            "Skipping update for {}: local timestamp {} is not newer than on-chain timestamp {}",
+                            "Timestamp check FAILED for {}: local timestamp {} is NOT newer than on-chain timestamp {}, skipping update to prevent stale data submission",
                             datafeed.name, feed_timestamp, on_chain_timestamp
                         );
 
@@ -290,13 +290,13 @@ impl<'a> ContractUpdater<'a> {
                             &datafeed.networks,
                             false,
                             None,
-                            Some(SkipReason::NoDeviation), // Could add a new SkipReason::TimestampStale
+                            Some(SkipReason::TimestampStale),
                         );
 
                         return Ok((false, format!("timestamp safety check failed: local timestamp {feed_timestamp} <= on-chain timestamp {on_chain_timestamp}")));
                     } else {
-                        debug!(
-                            "Timestamp safety check passed for {}: local timestamp {} > on-chain timestamp {}",
+                        info!(
+                            "Timestamp check PASSED for {}: local timestamp {} is newer than on-chain timestamp {}, proceeding with update",
                             datafeed.name, feed_timestamp, on_chain_timestamp
                         );
                     }
