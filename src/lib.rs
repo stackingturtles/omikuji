@@ -1,20 +1,23 @@
-pub mod config;
-pub mod constants;
-pub mod contracts;
-pub mod database;
-pub mod datafeed;
-pub mod error;
-pub mod error_context;
-pub mod error_handlers;
-pub mod event_monitors;
-pub mod gas;
-pub mod gas_price;
-pub mod metrics;
-pub mod network;
-pub mod scheduled_tasks;
+pub mod plugins;
 #[cfg(test)]
 pub mod test_utils;
-pub mod transaction;
-pub mod ui;
-pub mod utils;
-pub mod wallet;
+
+// Re-export modules from omikuji-core
+pub use omikuji_core::config;
+pub use omikuji_core::constants;
+pub use omikuji_core::contracts;
+pub use omikuji_core::database;
+pub use omikuji_core::datafeed;
+pub use omikuji_core::error;
+pub use omikuji_core::event_monitors;
+pub use omikuji_core::error_context;
+pub use omikuji_core::error_handlers;
+pub use omikuji_core::gas;
+pub use omikuji_core::gas_price;
+pub use omikuji_core::metrics;
+pub use omikuji_core::network;
+pub use omikuji_core::scheduled_tasks;
+pub use omikuji_core::transaction;
+pub use omikuji_core::ui;
+pub use omikuji_core::utils;
+pub use omikuji_core::wallet;

@@ -1,6 +1,22 @@
-# CLAUDE.md
+# CLAUDE.md - Omikuji Community Edition
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Edition Scope
+
+This is the **Omikuji Community Edition** - the open-source, developer-focused version of Omikuji. This edition is fully MIT/Apache-2.0 licensed and contains all core functionality needed for development and testing.
+
+## Community Features
+
+The Community Edition includes:
+- Environment variable and file-based secret management
+- Single-node operation
+- Standard Prometheus metrics
+- All core datafeed functionality
+- Support for multiple networks and datafeeds
+- Chainlink FluxAggregator contract support
+- PostgreSQL integration (optional)
+- WebSocket support
 
 ## Project Overview
 
@@ -144,6 +160,98 @@ For comprehensive project documentation, see:
 - [Architecture Reference](docs/reference/architecture.md) - System design details
 - [Configuration Reference](docs/reference/configuration.md) - All configuration options
 - [Contributing Guide](docs/development/contributing.md) - Development guidelines
+
+## Plugin System
+
+### Community Edition Plugins
+
+The Community Edition includes the following built-in plugins:
+
+**Secret Providers:**
+- `env` - Environment variable secret storage
+- `keyring` - OS keyring secret storage (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+
+**Cluster Providers:**
+- `single-node` - No-op cluster provider for single-instance operation (always leader)
+
+### Plugin Registration
+
+Plugins are automatically registered during daemon startup in `src/main.rs`:
+
+```rust
+use omikuji::plugins;
+
+// Register all community plugins
+plugins::register_community_plugins()?;
+
+// Build and run daemon
+let daemon = builder.build().await?;
+daemon.run().await
+```
+
+### Plugin Development Guidelines
+
+When developing traits for the plugin system:
+1. Define traits in a separate `omikuji-core` crate for shared interfaces
+2. All traits must be `Send + Sync` for async compatibility
+3. Use `async` methods where I/O operations are involved
+4. Provide clear documentation for trait implementors
+5. Consider backward compatibility when modifying existing traits
+
+### Example Trait Definition
+```rust
+pub trait SecretProvider: Send + Sync {
+    async fn get_private_key(&self, network: &str) -> Result<String>;
+    fn provider_name(&self) -> &str;
+}
+```
+
+### Creating a New Plugin
+
+To create a new secret provider plugin:
+
+1. Create a new file in `src/plugins/` (e.g., `my_provider.rs`)
+2. Implement the `SecretProvider` trait from `omikuji_core::traits::secrets`
+3. Create a factory that implements `SecretProviderFactory`
+4. Register the factory in `src/plugins/mod.rs`
+
+Example:
+```rust
+// src/plugins/my_provider.rs
+use omikuji_core::traits::secrets::{SecretProvider, SecretProviderFactory, ...};
+
+pub struct MyProvider;
+
+#[async_trait]
+impl SecretProvider for MyProvider {
+    async fn get_private_key(&self, network: &str) -> Result<String> {
+        // Implementation
+    }
+    // ... other methods
+}
+
+pub struct MyProviderFactory;
+
+#[async_trait]
+impl SecretProviderFactory for MyProviderFactory {
+    async fn create(&self, config: SecretProviderConfig) -> Result<Box<dyn SecretProvider>> {
+        Ok(Box::new(MyProvider::new()))
+    }
+
+    fn provider_type(&self) -> SecretProviderType {
+        SecretProviderType::Custom
+    }
+}
+```
+
+## Development Rules
+
+- **MUST** remain 100% open source (MIT/Apache-2.0 licensed)
+- **CANNOT** include pro edition features (AWS Secrets Manager, Nitro Enclaves, clustering)
+- **CANNOT** import or depend on `omikuji-pro` code
+- All PRs must pass community CI pipeline
+- Focus on developer experience and ease of use
+- Maintain trait compatibility for pro edition plugins
 
 ## Claude Interactions
 
