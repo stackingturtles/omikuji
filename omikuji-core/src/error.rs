@@ -8,7 +8,6 @@ pub enum OmikujiError {
     // TODO: Re-enable this once network module is moved to core
     // #[error("Network error: {0}")]
     // Network(#[from] crate::network::NetworkError),
-
     #[error("Network error: {0}")]
     Network(String),
 

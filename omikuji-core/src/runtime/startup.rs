@@ -29,12 +29,12 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::{self, models::OmikujiConfig};
 use crate::database::{self, cleanup::CleanupManager, FeedLogRepository};
-use sqlx::PgPool;
 use crate::gas_price::GasPriceManager;
-use crate::metrics::{ConfigMetrics, init_metrics_config};
+use crate::metrics::{init_metrics_config, ConfigMetrics};
 use crate::network::NetworkManager;
 use crate::transaction::queue::TransactionQueue;
 use crate::wallet::key_storage::create_key_storage;
+use sqlx::PgPool;
 
 /// Context for daemon initialization
 ///
@@ -70,11 +70,18 @@ impl StartupContext {
     /// - Configuration file cannot be loaded or parsed
     /// - Configuration validation fails
     pub async fn new(config_path: &Path, private_key_env: String) -> Result<Self> {
-        info!("Creating startup context from config: {}", config_path.display());
+        info!(
+            "Creating startup context from config: {}",
+            config_path.display()
+        );
 
         // Load and validate configuration
-        let config = config::load_config(config_path)
-            .with_context(|| format!("Failed to load configuration from {}", config_path.display()))?;
+        let config = config::load_config(config_path).with_context(|| {
+            format!(
+                "Failed to load configuration from {}",
+                config_path.display()
+            )
+        })?;
 
         info!("Configuration loaded successfully");
         info!(
@@ -101,7 +108,7 @@ impl StartupContext {
         }
 
         // Create a temporary empty network manager (will be initialized later)
-        let temp_network_manager = Arc::new(NetworkManager::new(&vec![]).await?);
+        let temp_network_manager = Arc::new(NetworkManager::new(&[]).await?);
 
         Ok(Self {
             config: config.clone(),
@@ -298,8 +305,7 @@ impl StartupContext {
     async fn initialize_cleanup_manager(&mut self) -> Result<()> {
         if let Some(ref pool) = self.database_pool {
             let repository = Arc::new(FeedLogRepository::new(pool.clone()));
-            let mut cleanup_manager =
-                CleanupManager::new(self.config.clone(), repository).await?;
+            let mut cleanup_manager = CleanupManager::new(self.config.clone(), repository).await?;
 
             // Start cleanup scheduler
             if let Err(e) = cleanup_manager.start().await {
@@ -327,9 +333,11 @@ impl StartupContext {
 
             // Create transaction repository if database is available
             let tx_repo = self.database_pool.as_ref().map(|pool| {
-                Arc::new(crate::database::transaction_repository::TransactionLogRepository::new(
-                    pool.clone(),
-                ))
+                Arc::new(
+                    crate::database::transaction_repository::TransactionLogRepository::new(
+                        pool.clone(),
+                    ),
+                )
             });
 
             let gas_price_manager = Arc::new(GasPriceManager::new(
@@ -354,9 +362,11 @@ impl StartupContext {
         info!("Initializing transaction queue for coordinated submissions");
 
         let tx_log_repo = self.database_pool.as_ref().map(|pool| {
-            Arc::new(crate::database::transaction_repository::TransactionLogRepository::new(
-                pool.clone(),
-            ))
+            Arc::new(
+                crate::database::transaction_repository::TransactionLogRepository::new(
+                    pool.clone(),
+                ),
+            )
         });
 
         self.transaction_queue = Arc::new(TransactionQueue::new(

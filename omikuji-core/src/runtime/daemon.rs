@@ -146,10 +146,16 @@ impl Daemon {
     /// Start datafeed monitoring
     fn start_datafeed_monitoring(&self) -> FeedManager {
         let mut manager = if let Some(pool) = &self.context.database_pool {
-            FeedManager::new(self.config.clone(), Arc::clone(&self.context.network_manager))
-                .with_repository(pool.clone())
+            FeedManager::new(
+                self.config.clone(),
+                Arc::clone(&self.context.network_manager),
+            )
+            .with_repository(pool.clone())
         } else {
-            FeedManager::new(self.config.clone(), Arc::clone(&self.context.network_manager))
+            FeedManager::new(
+                self.config.clone(),
+                Arc::clone(&self.context.network_manager),
+            )
         };
 
         // Add gas price manager if available
@@ -296,8 +302,7 @@ impl Daemon {
         let mut wallet_monitor =
             WalletBalanceMonitor::new(Arc::clone(&self.context.network_manager));
         if let Some(ref gas_price_manager) = self.context.gas_price_manager {
-            wallet_monitor =
-                wallet_monitor.with_gas_price_manager(Arc::clone(gas_price_manager));
+            wallet_monitor = wallet_monitor.with_gas_price_manager(Arc::clone(gas_price_manager));
         }
         tokio::spawn(async move {
             wallet_monitor.start().await;

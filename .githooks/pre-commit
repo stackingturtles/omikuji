@@ -1,49 +1,36 @@
 #!/bin/sh
-# Pre-commit hook for Omikuji
-# Runs cargo fmt and cargo clippy before allowing commits
+# Pre-commit hook to check Rust formatting and linting
 
 set -e
 
-echo "Running pre-commit checks..."
-
-# Check if we're in a Rust project
-if [ ! -f "Cargo.toml" ]; then
-    echo "Error: Cargo.toml not found. Are you in the project root?"
-    exit 1
+# Check if cargo is available
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "cargo not found, skipping checks"
+    exit 0
 fi
 
-# Run cargo fmt check
+# Check formatting
 echo "Checking code formatting..."
-if ! cargo fmt -- --check; then
+if ! cargo fmt -- --check 2>/dev/null; then
     echo ""
-    echo "❌ Code formatting check failed!"
-    echo "Please run 'cargo fmt' to fix formatting issues."
+    echo "ERROR: Code is not formatted correctly."
+    echo "Run 'cargo fmt' to fix formatting issues."
+    echo ""
     exit 1
 fi
-echo "✅ Code formatting check passed"
+echo "Formatting check passed."
 
-# Run cargo clippy with GitHub Actions CI settings
-echo ""
-echo "Running clippy linter (with CI settings)..."
-if ! cargo clippy -- -D warnings -D clippy::uninlined_format_args; then
+# Run clippy linter
+echo "Running clippy linter..."
+if ! SQLX_OFFLINE=true cargo clippy --quiet -- -D warnings -D clippy::uninlined_format_args 2>/dev/null; then
     echo ""
-    echo "❌ Clippy check failed!"
-    echo "Please fix the issues reported by clippy."
-    echo "Tip: Run 'make lint-fix' to automatically fix some issues."
+    echo "ERROR: Clippy found issues."
+    echo "Run 'cargo clippy -- -D warnings -D clippy::uninlined_format_args' to see details."
+    echo ""
     exit 1
 fi
-echo "✅ Clippy check passed"
-
-# Optional: Run tests (commented out by default as it might take longer)
-# echo ""
-# echo "Running tests..."
-# if ! cargo test; then
-#     echo ""
-#     echo "❌ Tests failed!"
-#     echo "Please fix failing tests before committing."
-#     exit 1
-# fi
-# echo "✅ All tests passed"
+echo "Clippy check passed."
 
 echo ""
-echo "✅ All pre-commit checks passed!"
+echo "All pre-commit checks passed!"
+exit 0

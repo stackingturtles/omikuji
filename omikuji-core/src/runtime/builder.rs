@@ -25,8 +25,8 @@ use anyhow::Result;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
-use super::{Daemon, ShutdownHandle, StartupContext};
 use super::shutdown::install_signal_handlers;
+use super::{Daemon, ShutdownHandle, StartupContext};
 use crate::config;
 
 /// Builder for constructing a daemon instance
@@ -123,9 +123,7 @@ impl DaemonBuilder {
         info!("Building daemon");
 
         // Determine configuration path
-        let config_path = self
-            .config_path
-            .unwrap_or_else(config::default_config_path);
+        let config_path = self.config_path.unwrap_or_else(config::default_config_path);
 
         info!("Using configuration file: {}", config_path.display());
 
@@ -178,9 +176,6 @@ mod tests {
             .private_key_env("TEST_KEY");
 
         assert_eq!(builder.private_key_env, "TEST_KEY");
-        assert_eq!(
-            builder.config_path,
-            Some(PathBuf::from("test_config.yaml"))
-        );
+        assert_eq!(builder.config_path, Some(PathBuf::from("test_config.yaml")));
     }
 }

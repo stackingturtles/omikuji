@@ -1,8 +1,8 @@
 //! Example demonstrating the EventMonitorBuilder
 
 use alloy::primitives::address;
-use omikuji::event_monitors::EventMonitorBuilder;
 use omikuji::event_monitors::models::{HttpMethod, ResponseType};
+use omikuji::event_monitors::EventMonitorBuilder;
 
 fn main() {
     // Example 1: Basic event monitor with builder

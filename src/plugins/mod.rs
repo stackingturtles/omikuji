@@ -89,7 +89,10 @@ mod tests {
         // Create a fresh registry for testing
         let registry = PluginRegistry::new();
         let result = register_community_plugins(&registry);
-        assert!(result.is_ok(), "Failed to register community plugins: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Failed to register community plugins: {result:?}"
+        );
     }
 
     #[tokio::test]

@@ -7,7 +7,9 @@
 use super::metrics_config::MetricsConfig;
 use super::models::*;
 use crate::gas_price::GasPriceFeedConfig;
-use crate::scheduled_tasks::{CheckCondition, GasConfig as TaskGasConfig, Parameter, ScheduledTask, TargetFunction};
+use crate::scheduled_tasks::{
+    CheckCondition, GasConfig as TaskGasConfig, Parameter, ScheduledTask, TargetFunction,
+};
 use alloy::primitives::I256;
 use serde_json::Value;
 
@@ -500,12 +502,10 @@ impl ScheduledTaskBuilder {
     /// Add a parameter to the target function
     pub fn add_parameter(mut self, param_type: impl Into<String>, value: Value) -> Self {
         if let Some(ref mut target_function) = self.target_function {
-            target_function
-                .parameters
-                .push(Parameter {
-                    param_type: param_type.into(),
-                    value,
-                });
+            target_function.parameters.push(Parameter {
+                param_type: param_type.into(),
+                value,
+            });
         }
         self
     }

@@ -88,7 +88,11 @@ impl ClusterProvider for SingleNodeCluster {
         })
     }
 
-    async fn acquire_lock(&self, _key: &str, _timeout: Duration) -> Result<Box<dyn DistributedLock>> {
+    async fn acquire_lock(
+        &self,
+        _key: &str,
+        _timeout: Duration,
+    ) -> Result<Box<dyn DistributedLock>> {
         // Always succeeds immediately in single-node mode
         Ok(Box::new(NoOpLock))
     }

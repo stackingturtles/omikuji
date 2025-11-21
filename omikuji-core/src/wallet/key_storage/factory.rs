@@ -40,12 +40,10 @@ pub async fn create_key_storage(config: &OmikujiConfig) -> Result<Box<dyn KeySto
 
             Ok(Box::new(vault_storage))
         }
-        "aws-secrets" => {
-            Err(anyhow!(
-                "AWS Secrets Manager storage is only available in Omikuji Pro Edition. \
+        "aws-secrets" => Err(anyhow!(
+            "AWS Secrets Manager storage is only available in Omikuji Pro Edition. \
                 Please use 'vault', 'keyring', or 'env' for Community Edition."
-            ))
-        }
+        )),
         _ => Err(anyhow!(
             "Unknown key storage type: {}",
             config.key_storage.storage_type
