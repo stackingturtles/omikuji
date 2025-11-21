@@ -45,14 +45,15 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "0BSD",
     "ISC",
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
     "Unlicense",
-    "Unicode-DFS-2016",
     "Unicode-3.0",
     "BSL-1.0",
+    "CDLA-Permissive-2.0",
 ]
 
 # Clarify licenses for crates that cargo-deny can't auto-detect
