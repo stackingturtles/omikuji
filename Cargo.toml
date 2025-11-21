@@ -22,7 +22,7 @@ clap = { version = "4.4", features = ["derive"] }
 validator = { version = "0.16", features = ["derive"] }
 thiserror = "1.0"
 anyhow = "1.0"
-dirs = "5.0"
+dirs = "6.0"
 dotenv = "0.15"
 
 # Async runtime
