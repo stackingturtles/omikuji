@@ -72,7 +72,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Cron scheduling
 cron = "0.12"
-tokio-cron-scheduler = "0.9"
+tokio-cron-scheduler = "0.15"
 
 # Utilities
 lazy_static = "1.4"
