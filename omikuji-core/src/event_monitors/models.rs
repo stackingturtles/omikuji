@@ -34,20 +34,15 @@ pub struct EventMonitor {
 }
 
 /// HTTP method for webhook calls
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethod {
     Get,
+    #[default]
     Post,
     Put,
     Patch,
     Delete,
-}
-
-impl Default for HttpMethod {
-    fn default() -> Self {
-        Self::Post
-    }
 }
 
 /// Configuration for webhook endpoints
