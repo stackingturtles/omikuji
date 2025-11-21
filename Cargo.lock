@@ -3038,7 +3038,7 @@ dependencies = [
  "mockito",
  "omikuji-core",
  "once_cell",
- "prometheus 0.14.0",
+ "prometheus",
  "prometheus-hyper",
  "rand 0.8.5",
  "reqwest 0.11.27",
@@ -3080,7 +3080,7 @@ dependencies = [
  "mockall",
  "mockito",
  "once_cell",
- "prometheus 0.14.0",
+ "prometheus",
  "prometheus-hyper",
  "reqwest 0.11.27",
  "secrecy",
@@ -3472,20 +3472,6 @@ dependencies = [
 
 [[package]]
 name = "prometheus"
-version = "0.13.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d33c28a30771f7f96db69893f78b857f7450d7e0237e9c8fc6427a81bae7ed1"
-dependencies = [
- "cfg-if",
- "fnv",
- "lazy_static",
- "memchr",
- "parking_lot",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "prometheus"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
@@ -3501,12 +3487,15 @@ dependencies = [
 
 [[package]]
 name = "prometheus-hyper"
-version = "0.1.5"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18fc98d5705a20b11f8b240c0857167b79852ba469f9faec6df0027e576e676e"
+checksum = "60d6eeac44b972d6f552e8aaec7f869200aef42f14ddffdddde308b94d0c066e"
 dependencies = [
- "hyper 0.14.32",
- "prometheus 0.13.4",
+ "bytes",
+ "http-body-util",
+ "hyper 1.8.1",
+ "hyper-util",
+ "prometheus",
  "tokio",
  "tracing",
 ]
