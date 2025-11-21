@@ -87,7 +87,7 @@ dashmap = "6.0"
 arc-swap = "1.7"
 
 # Configuration validation
-validator = { version = "0.16", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full", "test-util"] }
