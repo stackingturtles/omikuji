@@ -3,7 +3,7 @@ members = [".", "omikuji-core"]
 
 [package]
 name = "omikuji"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 authors = ["Ijonas Kisselbach <ijonas@ijonas.com>"]
 description = "A lightweight EVM blockchain datafeed provider daemon"
@@ -60,7 +60,7 @@ backoff = { version = "0.4", features = ["futures"] }
 jsonpath-rust = "0.3"
 
 # Database
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
   "postgres",
   "chrono",

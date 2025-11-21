@@ -1,6 +1,6 @@
 [package]
 name = "omikuji-core"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 authors = ["Stacking Turtles Ltd"]
 license = "MIT OR Apache-2.0"
@@ -57,7 +57,7 @@ prometheus-hyper = "0.1"
 hyper = { version = "1.0", features = ["server", "http1"] }
 
 # Database (optional)
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
   "postgres",
   "chrono",
