@@ -68,7 +68,7 @@ sqlx = { version = "0.8", default-features = false, features = [
 
 # Retry mechanisms
 backoff = { version = "0.4", features = ["futures"] }
-jsonpath-rust = "0.3"
+jsonpath-rust = "1.0"
 
 # Utilities
 lazy_static = "1.4"
