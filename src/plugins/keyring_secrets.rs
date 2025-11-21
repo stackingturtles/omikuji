@@ -34,7 +34,7 @@ impl KeyringSecretProvider {
                 "Failed to create keyring entry for network '{}': {}",
                 network, e
             );
-            anyhow!("Failed to create keyring entry: {}", e)
+            anyhow!("Failed to create keyring entry: {e}")
         })
     }
 
@@ -71,7 +71,7 @@ impl SecretProvider for KeyringSecretProvider {
                 warn!("Keyring unavailable: D-Bus session not found (common in SSH sessions)");
             }
 
-            anyhow!("Failed to retrieve key for network '{}': {}", network, e)
+            anyhow!("Failed to retrieve key for network '{network}': {e}")
         })?;
 
         debug!("Successfully retrieved key for network '{}'", network);
@@ -90,7 +90,7 @@ impl SecretProvider for KeyringSecretProvider {
             if error_string.contains("D-Bus") || error_string.contains("dbus") {
                 error!("Keyring unavailable: D-Bus session not found (common in SSH/container)");
             }
-            anyhow!("Failed to store key for network '{}': {}", network, e)
+            anyhow!("Failed to store key for network '{network}': {e}")
         })?;
 
         info!(
@@ -121,7 +121,7 @@ impl SecretProvider for KeyringSecretProvider {
                 "Failed to remove key from keyring for network '{}': {}",
                 network, e
             );
-            anyhow!("Failed to remove key: {}", e)
+            anyhow!("Failed to remove key: {e}")
         })?;
 
         info!(
@@ -166,7 +166,7 @@ impl SecretProvider for KeyringSecretProvider {
 
         // Try to access the keyring with a test entry
         let test_entry = Entry::new(&self.service, "__health_check__")
-            .map_err(|e| anyhow!("Keyring unavailable: {}", e))?;
+            .map_err(|e| anyhow!("Keyring unavailable: {e}"))?;
 
         // Try to delete any existing test entry (ignore errors)
         let _ = test_entry.delete_credential();
@@ -174,11 +174,11 @@ impl SecretProvider for KeyringSecretProvider {
         // Try to set and get a value
         test_entry
             .set_password("test")
-            .map_err(|e| anyhow!("Cannot write to keyring: {}", e))?;
+            .map_err(|e| anyhow!("Cannot write to keyring: {e}"))?;
 
         test_entry
             .get_password()
-            .map_err(|e| anyhow!("Cannot read from keyring: {}", e))?;
+            .map_err(|e| anyhow!("Cannot read from keyring: {e}"))?;
 
         // Clean up
         let _ = test_entry.delete_credential();

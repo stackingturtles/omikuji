@@ -263,8 +263,7 @@ impl ConditionChecker {
                     decoded.first()
                 );
                 Err(anyhow!(
-                    "Unsupported or mismatched return type: {}",
-                    return_type
+                    "Unsupported or mismatched return type: {return_type}"
                 ))
             }
         };
@@ -291,8 +290,7 @@ impl ConditionChecker {
                 let inner = &remaining[1..remaining.len() - 1];
                 if inner.trim().is_empty() {
                     return Err(anyhow!(
-                        "Empty return type specification in function signature: {}",
-                        signature
+                        "Empty return type specification in function signature: {signature}"
                     ));
                 }
                 inner.to_string()
@@ -301,8 +299,7 @@ impl ConditionChecker {
                 "bool".to_string()
             } else {
                 return Err(anyhow!(
-                    "Invalid function signature format: {}. Expected 'funcName()' or 'funcName() (returnType)'",
-                    signature
+                    "Invalid function signature format: {signature}. Expected 'funcName()' or 'funcName() (returnType)'"
                 ));
             };
 
@@ -312,10 +309,7 @@ impl ConditionChecker {
             );
             Ok((func_name.to_string(), return_type))
         } else {
-            Err(anyhow!(
-                "Function signature must contain '()': {}",
-                signature
-            ))
+            Err(anyhow!("Function signature must contain '()': {signature}"))
         }
     }
 }

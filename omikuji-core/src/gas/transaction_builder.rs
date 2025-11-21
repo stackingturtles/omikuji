@@ -291,7 +291,7 @@ where
                 tx.set_max_priority_fee_per_gas(priority_fee.to::<u128>());
             }
         }
-        _ => return Err(anyhow::anyhow!("Unknown transaction type: {}", tx_type)),
+        _ => return Err(anyhow::anyhow!("Unknown transaction type: {tx_type}")),
     }
 
     Ok(tx)

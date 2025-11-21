@@ -256,8 +256,7 @@ impl NetworkManager {
     pub fn get_private_key(&self, network_name: &str) -> Result<String> {
         self.private_keys.get(network_name).cloned().ok_or_else(|| {
             anyhow::anyhow!(
-                "No private key found for network {}. Call load_wallet_from_env first",
-                network_name
+                "No private key found for network {network_name}. Call load_wallet_from_env first"
             )
         })
     }
@@ -279,8 +278,7 @@ impl NetworkManager {
             self.get_provider(network_name)
         } else {
             Err(anyhow::anyhow!(
-                "No signer found for network {}. Call load_wallet_from_env first",
-                network_name
+                "No signer found for network {network_name}. Call load_wallet_from_env first"
             ))
         }
     }
@@ -292,8 +290,7 @@ impl NetworkManager {
             .cloned()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "No wallet address found for network {}. Call load_wallet_from_env first",
-                    network_name
+                    "No wallet address found for network {network_name}. Call load_wallet_from_env first"
                 )
             })
     }
@@ -311,7 +308,7 @@ impl NetworkManager {
             .iter()
             .find(|node| node.ws_url.is_some())
             .ok_or_else(|| {
-                anyhow::anyhow!("Network {} has no WebSocket URLs configured", network_name)
+                anyhow::anyhow!("Network {network_name} has no WebSocket URLs configured")
             })?;
 
         let ws_url = node_with_ws.ws_url.as_ref().unwrap();

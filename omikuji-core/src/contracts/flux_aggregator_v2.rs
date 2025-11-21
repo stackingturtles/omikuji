@@ -164,9 +164,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                     // Check if we should retry
                     if retry_recorder.check_max_attempts_reached() {
                         return Err(anyhow::anyhow!(
-                            "Failed to send transaction after {} attempts: {}",
-                            attempt,
-                            e
+                            "Failed to send transaction after {attempt} attempts: {e}"
                         ));
                     }
 
@@ -273,7 +271,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                 gas_estimate.gas_price.or(gas_estimate.max_fee_per_gas),
                 "Transaction reverted",
             );
-            return Err(anyhow::anyhow!("Transaction failed: 0x{:x}", tx_hash));
+            return Err(anyhow::anyhow!("Transaction failed: 0x{tx_hash:x}"));
         }
 
         // Record successful transaction with all metrics

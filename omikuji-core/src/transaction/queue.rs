@@ -446,7 +446,7 @@ impl TransactionQueue {
                     break pending;
                 }
                 Err(e) => {
-                    let error = anyhow::anyhow!("{}", e);
+                    let error = anyhow::anyhow!("{e}");
 
                     // Check if this is a recoverable error and we have retries left
                     if retries < max_retries && Self::is_recoverable_error(&error) {

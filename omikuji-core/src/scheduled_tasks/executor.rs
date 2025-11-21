@@ -190,7 +190,7 @@ where
         } else {
             error!("Transaction failed: 0x{:x}", tx_hash);
             error!("Receipt: {:?}", receipt);
-            Err(anyhow!("Transaction failed: 0x{:x}", tx_hash))
+            Err(anyhow!("Transaction failed: 0x{tx_hash:x}"))
         }
     }
 
@@ -289,7 +289,7 @@ where
                     })?
                 } else {
                     error!("Invalid uint256 value format: {:?}", value);
-                    return Err(anyhow!("Invalid uint256 value: {:?}", value));
+                    return Err(anyhow!("Invalid uint256 value: {value:?}"));
                 };
                 debug!("Encoded uint256: {}", val);
                 Ok(DynSolValue::Uint(val, 256))
@@ -323,7 +323,7 @@ where
                     );
                     serde_json::from_str::<Vec<serde_json::Value>>(json_str).map_err(|e| {
                         error!("Failed to parse JSON array: {}", e);
-                        anyhow!("Failed to parse JSON array: {}", e)
+                        anyhow!("Failed to parse JSON array: {e}")
                     })?
                 } else {
                     value
@@ -361,7 +361,7 @@ where
             }
             _ => {
                 error!("Unsupported parameter type: {}", param_type);
-                Err(anyhow!("Unsupported parameter type: {}", param_type))
+                Err(anyhow!("Unsupported parameter type: {param_type}"))
             }
         }
     }

@@ -283,7 +283,7 @@ impl WebhookRetryMetricsRecorder {
         // In the future, we could add specific retry metrics
         if attempt > 1 {
             PROCESSING_ERRORS
-                .with_label_values(&[&self.monitor_name, reason])
+                .with_label_values(&[self.monitor_name.as_str(), reason])
                 .inc();
         }
     }
@@ -293,7 +293,7 @@ impl WebhookRetryMetricsRecorder {
         // Record whether the webhook eventually succeeded or failed
         if !success && total_attempts > 1 {
             PROCESSING_ERRORS
-                .with_label_values(&[&self.monitor_name, "webhook_failed_after_retries"])
+                .with_label_values(&[self.monitor_name.as_str(), "webhook_failed_after_retries"])
                 .inc();
         }
     }

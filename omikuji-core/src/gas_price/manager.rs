@@ -253,15 +253,17 @@ impl GasPriceManager {
         for price in prices {
             if let Some(networks) = reverse_mappings.get(price.token_id.as_str()) {
                 for network in networks {
+                    let network_str: &str = network;
+                    let symbol_str: &str = price.symbol.as_str();
                     // Update price metric
                     GAS_TOKEN_PRICE_USD
-                        .with_label_values(&[network, &price.symbol])
+                        .with_label_values(&[network_str, symbol_str])
                         .set(price.price_usd);
 
                     // Update staleness metric (time since price was fetched)
                     let staleness = now.saturating_sub(price.timestamp) as f64;
                     GAS_PRICE_STALENESS_SECONDS
-                        .with_label_values(&[network, &price.symbol])
+                        .with_label_values(&[network_str, symbol_str])
                         .set(staleness);
                 }
             }

@@ -37,9 +37,7 @@ impl JsonExtractor {
                 .with_context(|| format!("Failed to parse string '{s}' as f64 at path '{path}'")),
             _ => {
                 anyhow::bail!(
-                    "Value at path '{}' is not a number or string, found: {:?}",
-                    path,
-                    current
+                    "Value at path '{path}' is not a number or string, found: {current:?}"
                 );
             }
         }

@@ -49,10 +49,7 @@ impl PluginRegistry {
         let provider_type = factory.provider_type();
 
         if self.secret_factories.contains_key(&provider_type) {
-            bail!(
-                "Secret provider factory for {:?} already registered",
-                provider_type
-            );
+            bail!("Secret provider factory for {provider_type:?} already registered");
         }
 
         self.secret_factories.insert(provider_type, factory);
@@ -65,10 +62,7 @@ impl PluginRegistry {
         let provider_type = factory.provider_type();
 
         if self.cluster_factories.contains_key(&provider_type) {
-            bail!(
-                "Cluster provider factory for {:?} already registered",
-                provider_type
-            );
+            bail!("Cluster provider factory for {provider_type:?} already registered");
         }
 
         self.cluster_factories.insert(provider_type, factory);
@@ -84,10 +78,7 @@ impl PluginRegistry {
         let provider_type = factory.provider_type();
 
         if self.monitoring_factories.contains_key(&provider_type) {
-            bail!(
-                "Monitoring provider factory for {:?} already registered",
-                provider_type
-            );
+            bail!("Monitoring provider factory for {provider_type:?} already registered");
         }
 
         self.monitoring_factories.insert(provider_type, factory);
@@ -116,7 +107,7 @@ impl PluginRegistry {
         let factory = self
             .secret_factories
             .get(&provider_type)
-            .ok_or_else(|| anyhow::anyhow!("No factory registered for {:?}", provider_type))?;
+            .ok_or_else(|| anyhow::anyhow!("No factory registered for {provider_type:?}"))?;
 
         let provider = factory
             .create(config)
@@ -152,7 +143,7 @@ impl PluginRegistry {
         let factory = self
             .cluster_factories
             .get(&provider_type)
-            .ok_or_else(|| anyhow::anyhow!("No factory registered for {:?}", provider_type))?;
+            .ok_or_else(|| anyhow::anyhow!("No factory registered for {provider_type:?}"))?;
 
         let provider = factory
             .create(config)
@@ -199,7 +190,7 @@ impl PluginRegistry {
         let factory = self
             .monitoring_factories
             .get(&provider_type)
-            .ok_or_else(|| anyhow::anyhow!("No factory registered for {:?}", provider_type))?;
+            .ok_or_else(|| anyhow::anyhow!("No factory registered for {provider_type:?}"))?;
 
         let provider = factory
             .create(config)

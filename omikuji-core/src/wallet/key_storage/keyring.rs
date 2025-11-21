@@ -31,7 +31,7 @@ impl KeyringStorage {
                 "Failed to create keyring entry for network '{}': {}",
                 network, e
             );
-            anyhow!("Failed to create keyring entry: {}", e)
+            anyhow!("Failed to create keyring entry: {e}")
         })
     }
 }
@@ -57,7 +57,7 @@ impl KeyStorage for KeyringStorage {
                 warn!("Keyring unavailable: D-Bus session not found (common in SSH sessions)");
             }
 
-            anyhow!("Failed to retrieve key for network '{}': {}", network, e)
+            anyhow!("Failed to retrieve key for network '{network}': {e}")
         })?;
 
         debug!("Successfully retrieved key for network '{}'", network);
@@ -85,7 +85,7 @@ impl KeyStorage for KeyringStorage {
             if error_string.contains("D-Bus") || error_string.contains("dbus") {
                 error!("Keyring unavailable: D-Bus session not found (common in SSH/container)");
             }
-            anyhow!("Failed to store key for network '{}': {}", network, e)
+            anyhow!("Failed to store key for network '{network}': {e}")
         })?;
 
         info!("Successfully stored key for network '{}'", network);
@@ -110,7 +110,7 @@ impl KeyStorage for KeyringStorage {
         let entry = self.get_entry(network)?;
         entry
             .delete_credential()
-            .map_err(|e| anyhow!("Failed to remove key for network '{}': {}", network, e))?;
+            .map_err(|e| anyhow!("Failed to remove key for network '{network}': {e}"))?;
 
         info!("Successfully removed key for network '{}'", network);
         Ok(())

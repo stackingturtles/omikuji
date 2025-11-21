@@ -121,10 +121,7 @@ pub fn encode_parameter(param_type: &str, value: &str) -> Result<DynSolValue> {
                 .collect::<Result<Vec<_>>>()?;
             Ok(DynSolValue::Array(addresses))
         }
-        _ => Err(anyhow::anyhow!(
-            "Unsupported parameter type: {}",
-            param_type
-        )),
+        _ => Err(anyhow::anyhow!("Unsupported parameter type: {param_type}")),
     }
 }
 

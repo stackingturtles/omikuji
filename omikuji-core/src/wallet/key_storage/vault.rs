@@ -48,7 +48,7 @@ impl VaultStorage {
                 settings_builder.token(token);
             }
             _ => {
-                return Err(anyhow!("Unsupported auth method: {}", auth_method));
+                return Err(anyhow!("Unsupported auth method: {auth_method}"));
             }
         }
 
@@ -131,8 +131,7 @@ impl KeyStorage for VaultStorage {
                     .or_else(|| secret.get("value"))
                     .ok_or_else(|| {
                         anyhow!(
-                            "No 'private_key', 'key', or 'value' field found in Vault secret for network '{}'",
-                            network
+                            "No 'private_key', 'key', or 'value' field found in Vault secret for network '{network}'"
                         )
                     })?;
 
@@ -176,9 +175,7 @@ impl KeyStorage for VaultStorage {
 
                 self.audit_log("get_key", network, false);
                 Err(anyhow!(
-                    "Failed to retrieve key for network '{}': {}",
-                    network,
-                    e
+                    "Failed to retrieve key for network '{network}': {e}"
                 ))
             }
         }
@@ -220,11 +217,7 @@ impl KeyStorage for VaultStorage {
                     network, e
                 );
                 self.audit_log("store_key", network, false);
-                Err(anyhow!(
-                    "Failed to store key for network '{}': {}",
-                    network,
-                    e
-                ))
+                Err(anyhow!("Failed to store key for network '{network}': {e}"))
             }
         }
     }
@@ -257,11 +250,7 @@ impl KeyStorage for VaultStorage {
                     network, e
                 );
                 self.audit_log("remove_key", network, false);
-                Err(anyhow!(
-                    "Failed to remove key for network '{}': {}",
-                    network,
-                    e
-                ))
+                Err(anyhow!("Failed to remove key for network '{network}': {e}"))
             }
         }
     }
@@ -283,7 +272,7 @@ impl KeyStorage for VaultStorage {
             Err(e) => {
                 error!("Failed to list keys from Vault: {}", e);
                 self.audit_log("list_keys", "", false);
-                Err(anyhow!("Failed to list keys: {}", e))
+                Err(anyhow!("Failed to list keys: {e}"))
             }
         }
     }

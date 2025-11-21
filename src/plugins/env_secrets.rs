@@ -47,9 +47,7 @@ impl SecretProvider for EnvSecretProvider {
         env::var(&env_var_name).map_err(|e| {
             warn!("Failed to get private key for network '{}': {}", network, e);
             anyhow!(
-                "Private key not found for network '{}' in environment variable '{}'",
-                network,
-                env_var_name
+                "Private key not found for network '{network}' in environment variable '{env_var_name}'"
             )
         })
     }
@@ -67,8 +65,7 @@ impl SecretProvider for EnvSecretProvider {
 
         Err(anyhow!(
             "Environment variables cannot be persistently modified at runtime. \
-            Please set {} manually",
-            env_var_name
+            Please set {env_var_name} manually"
         ))
     }
 
@@ -84,8 +81,7 @@ impl SecretProvider for EnvSecretProvider {
 
         Err(anyhow!(
             "Environment variables cannot be removed at runtime. \
-            Please unset {} manually",
-            env_var_name
+            Please unset {env_var_name} manually"
         ))
     }
 

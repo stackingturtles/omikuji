@@ -28,7 +28,7 @@ tokio = { version = "1.35", features = ["full"] }
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = "0.3.20"
 
 # Time and scheduling
 chrono = { version = "0.4", features = ["serde"] }
@@ -52,16 +52,18 @@ reqwest = { version = "0.11", features = ["json"] }
 url = "2.4"
 
 # Metrics
-prometheus = "0.13"
+prometheus = "0.14"
 prometheus-hyper = "0.1"
 hyper = { version = "1.0", features = ["server", "http1"] }
 
-# Database (optional)
-sqlx = { version = "0.8", features = [
+# Database (postgres only - no mysql to avoid rsa vulnerability)
+sqlx = { version = "0.8", default-features = false, features = [
   "runtime-tokio-rustls",
   "postgres",
   "chrono",
   "migrate",
+  "macros",
+  "json",
 ] }
 
 # Retry mechanisms

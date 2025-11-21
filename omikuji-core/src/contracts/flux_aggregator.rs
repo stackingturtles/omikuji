@@ -557,8 +557,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                     );
                     if attempt >= max_attempts {
                         return Err(anyhow::anyhow!(
-                            "Transaction timed out after {} attempts",
-                            attempt
+                            "Transaction timed out after {attempt} attempts"
                         ));
                     }
                 }

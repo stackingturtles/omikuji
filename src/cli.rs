@@ -119,7 +119,7 @@ async fn get_configured_storage(
             Ok(config) => Some(config),
             Err(e) => {
                 // If config is explicitly provided but fails to load, that's an error
-                return Err(anyhow!("Failed to load configuration: {}", e));
+                return Err(anyhow!("Failed to load configuration: {e}"));
             }
         }
     } else {

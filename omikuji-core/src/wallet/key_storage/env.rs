@@ -58,8 +58,7 @@ impl KeyStorage for EnvVarStorage {
         }
 
         Err(anyhow!(
-            "Private key not found. Looked for '{}' and 'PRIVATE_KEY' environment variables",
-            env_var
+            "Private key not found. Looked for '{env_var}' and 'PRIVATE_KEY' environment variables"
         ))
     }
 

@@ -1,0 +1,120 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Target platforms to check
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+# ============================================================================
+# Advisories - Check for known vulnerabilities
+# ============================================================================
+[advisories]
+# The database of advisories to check against
+db-path = "~/.cargo/advisory-db"
+# URL to fetch advisories from
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# How to handle advisories that have been withdrawn
+yanked = "warn"
+# Ignore specific advisories (use sparingly, document why)
+ignore = [
+    # idna Punycode validation - requires validator 0.20+ (breaking API changes)
+    # Low risk: only affects Punycode domain name validation, not core functionality
+    "RUSTSEC-2024-0421",
+    # rsa Marvin Attack - comes from sqlx-mysql which is in Cargo.lock but NOT compiled
+    # sqlx-macros includes all DB drivers in lockfile for compile-time checking, but we
+    # use default-features=false with only postgres, so rsa is never actually used
+    "RUSTSEC-2023-0071",
+]
+
+# ============================================================================
+# Licenses - Ensure all dependencies have acceptable licenses
+# ============================================================================
+[licenses]
+# Confidence threshold for license detection (0.0 to 1.0)
+confidence-threshold = 0.8
+
+# List of allowed licenses (SPDX identifiers)
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "BSL-1.0",
+]
+
+# Deny specific licenses
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+
+# Clarify licenses for crates that cargo-deny can't auto-detect
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
+# ============================================================================
+# Bans - Restrict certain crates or versions
+# ============================================================================
+[bans]
+# How to handle multiple versions of the same crate
+multiple-versions = "warn"
+# How to handle crates that are allowed but not in the allow list
+wildcards = "allow"
+# Highlight the crate causing the duplicate
+highlight = "all"
+
+# Crates to deny completely
+deny = [
+    # Example: { name = "openssl", wrappers = ["openssl-sys"] }
+]
+
+# Crates to allow specific versions only
+# allow = []
+
+# Skip duplicate version checks for these crates
+skip = [
+    # Common crates with multiple versions in dependency tree
+    # { name = "syn", version = "*" },
+]
+
+# Skip checking entire dependency trees rooted at these crates
+skip-tree = [
+    # { name = "windows-sys", version = "*" },
+]
+
+# ============================================================================
+# Sources - Restrict where crates can be fetched from
+# ============================================================================
+[sources]
+# What sources are allowed
+unknown-registry = "deny"
+unknown-git = "warn"
+# Allow crates.io
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# Allow specific git sources
+allow-git = [
+    "https://github.com/stackingturtles/omikuji.git",
+]
+
+[sources.allow-org]
+# Allow all crates from specific GitHub organizations
+github = []
