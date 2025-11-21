@@ -55,13 +55,6 @@ allow = [
     "BSL-1.0",
 ]
 
-# Deny specific licenses
-deny = [
-    "GPL-2.0",
-    "GPL-3.0",
-    "AGPL-3.0",
-]
-
 # Clarify licenses for crates that cargo-deny can't auto-detect
 [[licenses.clarify]]
 name = "ring"
