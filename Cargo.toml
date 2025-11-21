@@ -11,10 +11,9 @@ repository = "https://github.com/ijonas/omikuji"
 license = "MIT"
 
 [dependencies]
-# Core plugin traits
+# Core plugin traits and shared runtime
 omikuji-core = { path = "omikuji-core" }
-# Community plugins (shared with Pro edition)
-omikuji-plugins-common = { path = "../omikuji-plugins-common" }
+# Community plugins are embedded in src/plugins/ (no external dependency)
 # Configuration and CLI
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"

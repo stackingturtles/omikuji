@@ -2974,7 +2974,7 @@ dependencies = [
 
 [[package]]
 name = "omikuji"
-version = "0.6.1"
+version = "0.7.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -2993,7 +2993,6 @@ dependencies = [
  "lazy_static",
  "mockito",
  "omikuji-core",
- "omikuji-plugins-common",
  "once_cell",
  "prometheus",
  "prometheus-hyper",
@@ -3017,7 +3016,7 @@ dependencies = [
 
 [[package]]
 name = "omikuji-core"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -3053,23 +3052,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "validator",
- "vaultrs",
-]
-
-[[package]]
-name = "omikuji-plugins-common"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "dirs",
- "keyring",
- "omikuji-core",
- "secrecy",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
  "vaultrs",
 ]
 
