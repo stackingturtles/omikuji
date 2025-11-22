@@ -14,6 +14,9 @@ WORKDIR /build
 # Copy manifests first for better caching
 COPY Cargo.toml Cargo.lock ./
 
+# Copy workspace member (omikuji-core library)
+COPY omikuji-core ./omikuji-core
+
 # Copy SQLX offline query data
 COPY .sqlx ./.sqlx
 
