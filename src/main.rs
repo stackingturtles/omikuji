@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Load .env file if it exists
-    match dotenv::dotenv() {
+    match dotenvy::dotenv() {
         Ok(path) => info!("Loaded .env file from: {:?}", path),
         Err(e) => info!("No .env file loaded: {}", e),
     }

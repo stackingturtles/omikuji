@@ -8,7 +8,7 @@ use alloy::{
     pubsub::PubSubFrontend,
 };
 use anyhow::{Context, Result};
-use backoff::{backoff::Backoff, ExponentialBackoff};
+use backon::{ExponentialBuilder, Retryable};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use url::Url;
@@ -20,22 +20,14 @@ pub type WsProvider = RootProvider<PubSubFrontend>;
 pub struct WsProviderManager {
     url: String,
     provider: Arc<RwLock<Option<Arc<WsProvider>>>>,
-    reconnect_backoff: ExponentialBackoff,
 }
 
 impl WsProviderManager {
     /// Create a new WebSocket provider manager
     pub fn new(ws_url: String) -> Self {
-        let backoff = ExponentialBackoff {
-            max_elapsed_time: None,                // Keep retrying indefinitely
-            max_interval: Duration::from_secs(60), // Max 1 minute between retries
-            ..ExponentialBackoff::default()
-        };
-
         Self {
             url: ws_url,
             provider: Arc::new(RwLock::new(None)),
-            reconnect_backoff: backoff,
         }
     }
 
@@ -84,28 +76,28 @@ impl WsProviderManager {
     async fn reconnect(&self) -> Result<()> {
         warn!("Attempting to reconnect to WebSocket endpoint");
 
-        let mut backoff = self.reconnect_backoff.clone();
-        loop {
+        // Configure exponential backoff with max delay of 60 seconds
+        // Retry indefinitely (no max_times limit)
+        let backoff = ExponentialBuilder::default()
+            .with_max_delay(Duration::from_secs(60))
+            .with_max_times(usize::MAX);
+
+        // Use backon's retry mechanism
+        let connect_fn = || async {
             match self.connect().await {
                 Ok(()) => {
                     info!("Successfully reconnected to WebSocket endpoint");
-                    return Ok(());
+                    Ok(())
                 }
                 Err(e) => {
                     error!("Failed to connect to WebSocket: {}", e);
-
-                    match backoff.next_backoff() {
-                        Some(duration) => {
-                            warn!("Retrying connection in {:?}", duration);
-                            tokio::time::sleep(duration).await;
-                        }
-                        None => {
-                            return Err(anyhow::anyhow!("Max reconnection attempts exceeded"));
-                        }
-                    }
+                    warn!("Will retry connection with exponential backoff");
+                    Err(e)
                 }
             }
-        }
+        };
+
+        connect_fn.retry(backoff).await
     }
 
     /// Create a new WebSocket provider

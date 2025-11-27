@@ -11,21 +11,21 @@ use crate::scheduled_tasks::ScheduledTask;
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct OmikujiConfig {
     /// Networks supported by this Omikuji instance
-    #[validate]
+    #[validate(nested)]
     pub networks: Vec<Network>,
 
     /// Datafeeds managed by this Omikuji instance
-    #[validate]
+    #[validate(nested)]
     pub datafeeds: Vec<Datafeed>,
 
     /// Database cleanup configuration
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub database_cleanup: DatabaseCleanupConfig,
 
     /// Key storage configuration
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub key_storage: KeyStorageConfig,
 
     /// Metrics configuration
@@ -79,7 +79,7 @@ fn default_cleanup_schedule() -> String {
 pub struct KeyStorageConfig {
     /// Storage type: "keyring", "env", "vault", or "aws-secrets" (default: "env" for backward compatibility)
     #[serde(default = "default_key_storage_type")]
-    #[validate(custom = "validate_key_storage_type")]
+    #[validate(custom(function = "validate_key_storage_type"))]
     pub storage_type: String,
 
     /// Keyring configuration (only used when storage_type is "keyring")
@@ -270,7 +270,7 @@ pub struct Network {
 
     /// Transaction type to use ("legacy" or "eip1559")
     #[serde(default = "default_transaction_type")]
-    #[validate(custom = "validate_transaction_type")]
+    #[validate(custom(function = "validate_transaction_type"))]
     pub transaction_type: String,
 
     /// Network nodes (RPC/WebSocket endpoints)
@@ -279,7 +279,7 @@ pub struct Network {
 
     /// Gas configuration for this network
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub gas_config: GasConfig,
 
     /// Gas token ID for price feeds (e.g., "ethereum" for CoinGecko)
@@ -292,7 +292,7 @@ pub struct Network {
 
     /// Balance alert thresholds (optional - no alerts if not configured)
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate]
+    #[validate(nested)]
     pub balance_alerts: Option<BalanceAlertThresholds>,
 
     /// Legacy fields for backward compatibility (deprecated)
@@ -345,7 +345,7 @@ pub struct GasConfig {
 
     /// Fee bumping configuration
     #[serde(default)]
-    #[validate]
+    #[validate(nested)]
     pub fee_bumping: FeeBumpingConfig,
 }
 
@@ -444,7 +444,7 @@ pub struct Datafeed {
     pub check_frequency: u64,
 
     /// Smart contract address for the datafeed
-    #[validate(custom = "validate_eth_address")]
+    #[validate(custom(function = "validate_eth_address"))]
     pub contract_address: String,
 
     /// Contract type (e.g., "fluxmon")

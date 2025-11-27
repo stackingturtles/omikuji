@@ -22,13 +22,10 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "warn"
 # Ignore specific advisories (use sparingly, document why)
 ignore = [
-    # idna Punycode validation - requires validator 0.20+ (breaking API changes)
-    # Low risk: only affects Punycode domain name validation, not core functionality
-    "RUSTSEC-2024-0421",
-    # rsa Marvin Attack - comes from sqlx-mysql which is in Cargo.lock but NOT compiled
-    # sqlx-macros includes all DB drivers in lockfile for compile-time checking, but we
-    # use default-features=false with only postgres, so rsa is never actually used
-    "RUSTSEC-2023-0071",
+    # paste proc-macro - transitive from alloy-primitives, cannot control without forking alloy
+    # proc-macro only used at compile time, not in runtime binary
+    # Low security risk - will be resolved when alloy upgrades to pastey or alternative
+    "RUSTSEC-2024-0436",
 ]
 
 # ============================================================================
