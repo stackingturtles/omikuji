@@ -86,10 +86,10 @@ sha256sum -c checksums.txt --ignore-missing
 
 ### Docker Installation
 
-Pull the latest Docker image:
+Pull the latest Docker image (no authentication required):
 
 ```bash
-docker pull ghcr.io/ijonas/omikuji:latest
+docker pull public.ecr.aws/stackingturtles/omikuji/omikuji-core:latest
 ```
 
 Run with your config file:
@@ -97,7 +97,7 @@ Run with your config file:
 ```bash
 docker run -v $(pwd)/config.yaml:/config/config.yaml \
            -e OMIKUJI_PRIVATE_KEY=$OMIKUJI_PRIVATE_KEY \
-           ghcr.io/ijonas/omikuji:latest
+           public.ecr.aws/stackingturtles/omikuji/omikuji-core:latest
 ```
 
 ### Build from Source

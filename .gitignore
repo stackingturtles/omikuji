@@ -12,3 +12,4 @@ coverage.lcov
 /target/coverage/
 web/
 logs/*
+omikuji.siwa.config.yaml

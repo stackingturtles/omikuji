@@ -58,8 +58,10 @@ Docker provides a consistent environment across all platforms.
 
 ### Pull the Latest Image
 
+No authentication required for pulling:
+
 ```bash
-docker pull ghcr.io/ijonas/omikuji:latest
+docker pull public.ecr.aws/stackingturtles/omikuji/omikuji-core:latest
 ```
 
 ### Run with Docker
@@ -68,14 +70,14 @@ docker pull ghcr.io/ijonas/omikuji:latest
 # Basic usage with configuration file
 docker run -v $(pwd)/config.yaml:/config/config.yaml \
            -e OMIKUJI_PRIVATE_KEY=$OMIKUJI_PRIVATE_KEY \
-           ghcr.io/ijonas/omikuji:latest
+           public.ecr.aws/stackingturtles/omikuji/omikuji-core:latest
 
 # With persistent database
 docker run -v $(pwd)/config.yaml:/config/config.yaml \
            -v omikuji_data:/data \
            -e OMIKUJI_PRIVATE_KEY=$OMIKUJI_PRIVATE_KEY \
            -e DATABASE_URL=$DATABASE_URL \
-           ghcr.io/ijonas/omikuji:latest
+           public.ecr.aws/stackingturtles/omikuji/omikuji-core:latest
 ```
 
 ### Docker Compose

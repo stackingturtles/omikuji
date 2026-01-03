@@ -8,18 +8,19 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  AWS_REGION: us-east-1
+  ECR_PUBLIC_ALIAS: stackingturtles
+  ECR_REPOSITORY: omikuji/omikuji-core
+  SQLX_OFFLINE: true
 
 jobs:
   build:
-    name: Build Docker Image
+    name: Build and Push to ECR Public
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Changed from read to write for SBOM release attachment
-      packages: write
-      actions: read    # Added for artifact access
-      
+      contents: write
+      actions: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,56 +31,57 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: public.ecr.aws/${{ env.ECR_PUBLIC_ALIAS }}/${{ env.ECR_REPOSITORY }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          # Only build for amd64 on PRs and branches, multi-arch on main
-          platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Use both GitHub Actions cache and registry cache
-          cache-from: |
-            type=gha
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: |
-            type=gha,mode=max
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
-          
+          build-args: |
+            SQLX_OFFLINE=true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
       - name: Generate SBOM
         if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/')
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          image: public.ecr.aws/${{ env.ECR_PUBLIC_ALIAS }}/${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}
           format: spdx-json
           output-file: sbom-${{ github.ref_name }}.spdx.json
-          upload-release-assets: true  # Enable uploading to release
-          upload-artifact: true        # Also upload as workflow artifact
-          
+          upload-release-assets: true
+          upload-artifact: true
+
       - name: Upload SBOM to Release
         if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Upload SBOM to the release
           gh release upload "${{ github.ref_name }}" "sbom-${{ github.ref_name }}.spdx.json" --clobber || true
