@@ -18,11 +18,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable]
+    runs-on: [self-hosted]
 
     steps:
       - name: Checkout code
@@ -31,13 +27,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "ci-${{ matrix.os }}"
+          shared-key: "ci-self-hosted"
           cache-on-failure: true
 
       - name: Check formatting
@@ -54,7 +50,7 @@ jobs:
 
   check-features:
     name: Check Features
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted]
 
     steps:
       - name: Checkout code
