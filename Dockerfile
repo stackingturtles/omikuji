@@ -1,50 +1,74 @@
-# Multi-stage build for minimal final image
-# Builder stage
-FROM rust:1.91-bookworm AS builder
+# syntax=docker/dockerfile:1.4
+# Multi-stage build with cargo-chef for optimized caching
 
-# Install build dependencies
+# ============================================================
+# Stage 1: Chef base image with build tools
+# ============================================================
+FROM lukemathwalker/cargo-chef:latest-rust-1.91-bookworm AS chef
+WORKDIR /app
+
+# Install build dependencies including mold linker for faster linking
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    mold \
+    clang \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app directory
-WORKDIR /build
+# Configure cargo to use mold linker
+RUN mkdir -p /root/.cargo && echo '[target.x86_64-unknown-linux-gnu]\nlinker = "clang"\nrustflags = ["-C", "link-arg=-fuse-ld=mold"]' > /root/.cargo/config.toml
 
-# Copy manifests first for better caching
-COPY Cargo.toml Cargo.lock ./
+# Install sccache for compiler caching
+ENV SCCACHE_DIR=/sccache
+ENV RUSTC_WRAPPER=sccache
+RUN cargo install sccache --version ^0.8 --locked
 
-# Copy workspace member (omikuji-core library)
-COPY omikuji-core ./omikuji-core
+# ============================================================
+# Stage 2: Planner - analyze dependencies
+# ============================================================
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# Copy SQLX offline query data
-COPY .sqlx ./.sqlx
+# ============================================================
+# Stage 3: Builder - build dependencies then application
+# ============================================================
+FROM chef AS builder
 
-# Create dummy main.rs for dependency caching
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs
+# Copy the recipe (dependency specification)
+COPY --from=planner /app/recipe.json recipe.json
 
-# Build dependencies only (this layer will be cached)
-RUN SQLX_OFFLINE=true cargo build --release && \
-    rm -rf src
+# Build dependencies - this layer is cached when dependencies don't change
+# Using BuildKit cache mounts for sccache, cargo registry, and git
+ARG SQLX_OFFLINE=true
+ENV SQLX_OFFLINE=${SQLX_OFFLINE}
+ENV CARGO_INCREMENTAL=0
 
-# Copy actual source code
-COPY src ./src
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/sccache,sharing=locked \
+    cargo chef cook --release --recipe-path recipe.json
 
-# Copy migrations
-COPY migrations ./migrations
+# Copy source code
+COPY . .
 
 # Build the application
-RUN SQLX_OFFLINE=true cargo build --release && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/sccache,sharing=locked \
+    cargo build --release --locked && \
     strip target/release/omikuji
 
-# Runtime stage
+# ============================================================
+# Stage 4: Runtime - minimal production image
+# ============================================================
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     tzdata \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -52,10 +76,10 @@ RUN groupadd -r -g 1000 omikuji && \
     useradd -r -u 1000 -g omikuji omikuji
 
 # Copy binary from builder
-COPY --from=builder /build/target/release/omikuji /usr/local/bin/omikuji
+COPY --from=builder /app/target/release/omikuji /usr/local/bin/omikuji
 
-# Copy migrations from builder
-COPY --from=builder /build/migrations /migrations
+# Copy migrations from source
+COPY migrations /migrations
 
 # Create config directory and set permissions
 RUN mkdir -p /config && chown omikuji:omikuji /config && \
