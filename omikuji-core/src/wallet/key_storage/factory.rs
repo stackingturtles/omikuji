@@ -1,8 +1,40 @@
 use anyhow::{anyhow, Context, Result};
+use async_trait::async_trait;
+use secrecy::SecretString;
 use tracing::info;
 
 use crate::config::models::OmikujiConfig;
+use crate::plugin_registry::global_registry;
+use crate::traits::secrets::{SecretProvider, SecretProviderConfig, SecretProviderType};
 use crate::wallet::key_storage::{EnvVarStorage, KeyStorage, KeyringStorage, VaultStorage};
+
+/// Adapter that wraps a `SecretProvider` (plugin system) as a `KeyStorage`
+struct SecretProviderKeyStorageAdapter {
+    provider: Box<dyn SecretProvider>,
+}
+
+#[async_trait]
+impl KeyStorage for SecretProviderKeyStorageAdapter {
+    async fn get_key(&self, network: &str) -> Result<SecretString> {
+        let key = self.provider.get_private_key(network).await?;
+        Ok(SecretString::new(key.into()))
+    }
+
+    async fn store_key(&self, network: &str, key: SecretString) -> Result<()> {
+        use secrecy::ExposeSecret;
+        self.provider
+            .store_private_key(network, key.expose_secret())
+            .await
+    }
+
+    async fn remove_key(&self, network: &str) -> Result<()> {
+        self.provider.remove_private_key(network).await
+    }
+
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        self.provider.list_networks().await
+    }
+}
 
 /// Creates a key storage instance based on the configuration
 pub async fn create_key_storage(config: &OmikujiConfig) -> Result<Box<dyn KeyStorage>> {
@@ -40,10 +72,31 @@ pub async fn create_key_storage(config: &OmikujiConfig) -> Result<Box<dyn KeySto
 
             Ok(Box::new(vault_storage))
         }
-        "aws-secrets" => Err(anyhow!(
-            "AWS Secrets Manager storage is only available in Omikuji Pro Edition. \
-                Please use 'vault', 'keyring', or 'env' for Community Edition."
-        )),
+        "aws-secrets" => {
+            // Check if the AWS Secrets plugin has been registered (Pro edition)
+            let registry = global_registry();
+            if !registry.has_secret_factory(&SecretProviderType::AwsSecrets) {
+                return Err(anyhow!(
+                    "AWS Secrets Manager storage is only available in Omikuji Pro Edition. \
+                     Please use 'vault', 'keyring', or 'env' for Community Edition."
+                ));
+            }
+
+            let aws_config = &config.key_storage.aws_secrets;
+            let provider_config = SecretProviderConfig::AwsSecrets {
+                region: aws_config.region.clone(),
+                prefix: Some(aws_config.prefix.clone()),
+                cache_ttl_seconds: Some(aws_config.cache_ttl_seconds),
+            };
+
+            info!("Using AWS Secrets Manager for key storage (Pro Edition)");
+            let provider = registry
+                .create_secret_provider(provider_config)
+                .await
+                .context("Failed to initialize AWS Secrets Manager storage")?;
+
+            Ok(Box::new(SecretProviderKeyStorageAdapter { provider }))
+        }
         _ => Err(anyhow!(
             "Unknown key storage type: {}",
             config.key_storage.storage_type

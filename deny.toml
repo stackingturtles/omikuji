@@ -26,6 +26,21 @@ ignore = [
     # proc-macro only used at compile time, not in runtime binary
     # Low security risk - will be resolved when alloy upgrades to pastey or alternative
     "RUSTSEC-2024-0436",
+
+    # rsa - transitive from sqlx-mysql, but we only use postgres (not mysql)
+    # Not compiled into our binary since mysql feature is not enabled
+    # No fixed version available - will monitor for sqlx updates
+    "RUSTSEC-2023-0071",
+
+    # derivative - transitive from ark-ff via ruint via alloy-primitives
+    # Unmaintained crate, but no security vulnerability
+    # Will be resolved when alloy/ruint dependencies update
+    "RUSTSEC-2024-0388",
+
+    # lru - transitive from alloy-provider, unsound IterMut issue
+    # We don't use the problematic IterMut API in our code
+    # Will be resolved when alloy updates lru dependency
+    "RUSTSEC-2026-0002",
 ]
 
 # ============================================================================
