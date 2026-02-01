@@ -89,6 +89,37 @@ impl PluginRegistry {
         Ok(())
     }
 
+    /// Create a secret provider from a registered factory without activating it
+    pub async fn create_secret_provider(
+        &self,
+        config: crate::traits::SecretProviderConfig,
+    ) -> Result<Box<dyn SecretProvider>> {
+        let provider_type = match &config {
+            crate::traits::SecretProviderConfig::Env { .. } => SecretProviderType::Env,
+            crate::traits::SecretProviderConfig::File { .. } => SecretProviderType::File,
+            crate::traits::SecretProviderConfig::Keyring { .. } => SecretProviderType::Keyring,
+            crate::traits::SecretProviderConfig::AwsSecrets { .. } => {
+                SecretProviderType::AwsSecrets
+            }
+            crate::traits::SecretProviderConfig::Vault { .. } => SecretProviderType::Vault,
+        };
+
+        let factory = self
+            .secret_factories
+            .get(&provider_type)
+            .ok_or_else(|| anyhow::anyhow!("No factory registered for {provider_type:?}"))?;
+
+        factory
+            .create(config)
+            .await
+            .context("Failed to create secret provider")
+    }
+
+    /// Check if a secret provider factory is registered for the given type
+    pub fn has_secret_factory(&self, provider_type: &SecretProviderType) -> bool {
+        self.secret_factories.contains_key(provider_type)
+    }
+
     /// Set the active secret provider
     pub async fn set_active_secret_provider(
         &self,
