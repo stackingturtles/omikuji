@@ -1,0 +1,45 @@
+name: Test macOS Runner
+
+on:
+  push:
+    branches: [ test-macos-runner ]
+  workflow_dispatch:
+
+jobs:
+  test-macos-runner:
+    name: Test macOS Self-Hosted Runner
+    runs-on: [self-hosted, macos, arm64]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify runner info
+        run: |
+          echo "=== Runner Info ==="
+          uname -a
+          sw_vers
+          echo ""
+          echo "=== CPU Info ==="
+          sysctl -n hw.ncpu
+          sysctl -n hw.memsize | awk '{print $1/1024/1024/1024 " GB RAM"}'
+          echo ""
+          echo "=== Working Directory ==="
+          pwd
+          ls -la
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Check Rust version
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Build (macOS ARM64)
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Run tests
+        run: cargo test
