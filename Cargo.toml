@@ -3,7 +3,7 @@ members = [".", "omikuji-core"]
 
 [package]
 name = "omikuji"
-version = "0.7.1"
+version = "0.7.4"
 edition = "2021"
 authors = ["Ijonas Kisselbach <ijonas@ijonas.com>"]
 description = "A lightweight EVM blockchain datafeed provider daemon"
