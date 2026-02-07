@@ -20,8 +20,8 @@ RUN mkdir -p /root/.cargo && echo '[target.x86_64-unknown-linux-gnu]\nlinker = "
 
 # Install sccache for compiler caching
 ENV SCCACHE_DIR=/sccache
-ENV RUSTC_WRAPPER=sccache
 RUN cargo install sccache --version ^0.8 --locked
+ENV RUSTC_WRAPPER=sccache
 
 # ============================================================
 # Stage 2: Planner - analyze dependencies
