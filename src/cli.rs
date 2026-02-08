@@ -37,6 +37,27 @@ pub enum Commands {
     },
     /// Run the omikuji daemon (default behavior)
     Run,
+    /// Verify configuration by testing connectivity to all services
+    Verify {
+        /// Only check database connectivity
+        #[arg(long)]
+        database: bool,
+        /// Only check feed URL accessibility
+        #[arg(long)]
+        feeds: bool,
+        /// Only check RPC node connectivity
+        #[arg(long)]
+        rpc: bool,
+        /// Only check secret provider health
+        #[arg(long)]
+        secrets: bool,
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
+        /// Per-check timeout in seconds
+        #[arg(long, default_value = "10")]
+        timeout: u64,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]

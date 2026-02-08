@@ -78,6 +78,7 @@ pub mod traits;
 pub mod transaction;
 pub mod ui;
 pub mod utils;
+pub mod verify;
 pub mod wallet;
 
 // Re-export commonly used items
