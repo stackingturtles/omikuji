@@ -21,6 +21,53 @@ async fn main() -> Result<()> {
             tracing_subscriber::fmt::init();
             return cli::handle_key_command(command.clone(), cli.config.clone()).await;
         }
+        Some(Commands::Verify {
+            database,
+            feeds,
+            rpc,
+            secrets,
+            json,
+            timeout,
+        }) => {
+            tracing_subscriber::fmt::init();
+            let _ = dotenvy::dotenv();
+
+            use omikuji_core::plugin_registry::global_registry;
+            plugins::register_community_plugins(global_registry())?;
+
+            let config_path = cli
+                .config
+                .clone()
+                .unwrap_or_else(omikuji_core::config::default_config_path);
+            let config = match omikuji_core::config::load_config(&config_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!(
+                        "Failed to load configuration from {}: {e}",
+                        config_path.display()
+                    );
+                    std::process::exit(2);
+                }
+            };
+
+            let options = omikuji_core::verify::VerifyOptions {
+                database: *database,
+                feeds: *feeds,
+                rpc: *rpc,
+                secrets: *secrets,
+                json: *json,
+                timeout: std::time::Duration::from_secs(*timeout),
+            };
+            let report = omikuji_core::verify::run_verification(&config, &options).await;
+
+            if *json {
+                println!("{}", omikuji_core::verify::format_json_report(&report));
+            } else {
+                print!("{}", omikuji_core::verify::format_text_report(&report));
+            }
+
+            std::process::exit(if report.has_failures() { 1 } else { 0 });
+        }
         Some(Commands::Run) | None => {
             // Continue with normal daemon operation
         }
