@@ -31,6 +31,9 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
+      - name: Install Foundry (Anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
