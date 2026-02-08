@@ -648,4 +648,57 @@ mod tests {
         // Real tests would require mock providers and config
         assert!(true);
     }
+
+    #[test]
+    fn test_nonce_too_low_case_insensitive() {
+        // Upper/mixed case variants
+        let upper = anyhow::anyhow!("NONCE TOO LOW");
+        assert!(TransactionQueue::is_nonce_too_low_error(&upper));
+
+        let mixed = anyhow::anyhow!("Nonce Too Low in transaction");
+        assert!(TransactionQueue::is_nonce_too_low_error(&mixed));
+
+        let underscore_upper = anyhow::anyhow!("NONCE_TOO_LOW");
+        assert!(TransactionQueue::is_nonce_too_low_error(&underscore_upper));
+    }
+
+    #[test]
+    fn test_nonce_too_low_not_matching() {
+        let unrelated = anyhow::anyhow!("gas limit exceeded");
+        assert!(!TransactionQueue::is_nonce_too_low_error(&unrelated));
+
+        let partial = anyhow::anyhow!("nonce is fine");
+        assert!(!TransactionQueue::is_nonce_too_low_error(&partial));
+
+        let empty = anyhow::anyhow!("");
+        assert!(!TransactionQueue::is_nonce_too_low_error(&empty));
+    }
+
+    #[test]
+    fn test_recoverable_network_error() {
+        let network_err = anyhow::anyhow!("network error occurred");
+        assert!(TransactionQueue::is_recoverable_error(&network_err));
+    }
+
+    #[test]
+    fn test_not_recoverable_invalid_error() {
+        // "invalid" in message → not recoverable
+        let invalid_err = anyhow::anyhow!("invalid transaction parameters");
+        assert!(!TransactionQueue::is_recoverable_error(&invalid_err));
+    }
+
+    #[test]
+    fn test_not_recoverable_unknown_error() {
+        // Unknown error text → default false
+        let unknown = anyhow::anyhow!("some completely unknown error");
+        assert!(!TransactionQueue::is_recoverable_error(&unknown));
+    }
+
+    #[test]
+    fn test_recoverable_already_known() {
+        // "already known" is both a nonce error and recoverable
+        let already_known = anyhow::anyhow!("transaction already known");
+        assert!(TransactionQueue::is_nonce_too_low_error(&already_known));
+        assert!(TransactionQueue::is_recoverable_error(&already_known));
+    }
 }

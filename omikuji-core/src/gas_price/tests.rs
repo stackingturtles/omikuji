@@ -131,4 +131,157 @@ mod tests {
         assert!(config.api_key.is_none());
         assert_eq!(config.base_url, "https://api.coingecko.com/api/v3");
     }
+
+    fn make_test_price(token_id: &str, symbol: &str, price_usd: f64) -> GasTokenPrice {
+        GasTokenPrice {
+            token_id: token_id.to_string(),
+            symbol: symbol.to_string(),
+            price_usd,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            source: "test".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cache_get_with_options_allow_expired() {
+        let cache = PriceCache::new(1); // 1 second TTL, fallback_to_cache=false by default
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+
+        // Wait for expiry
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // Default get() should NOT return expired (fallback_to_cache is false)
+        assert!(cache.get("ethereum").await.is_none());
+
+        // get_with_options(allow_expired=true) should return expired
+        let result = cache.get_with_options("ethereum", true).await;
+        assert!(result.is_some());
+        assert!((result.unwrap().price_usd - 2500.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_cache_get_with_options_reject_expired() {
+        let cache = PriceCache::new(1); // 1 second TTL
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+
+        // Wait for expiry
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // get_with_options(allow_expired=false) should NOT return expired
+        let result = cache.get_with_options("ethereum", false).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cache_clear_expired() {
+        let cache = PriceCache::new(1); // 1 second TTL
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+        cache
+            .insert(make_test_price("binancecoin", "BNB", 300.0))
+            .await;
+
+        assert_eq!(cache.size().await, 2);
+
+        // Wait for expiry
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        cache.clear_expired().await;
+
+        assert_eq!(cache.size().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_clear_all() {
+        let cache = PriceCache::new(60);
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+        cache
+            .insert(make_test_price("binancecoin", "BNB", 300.0))
+            .await;
+
+        assert_eq!(cache.size().await, 2);
+
+        cache.clear().await;
+
+        assert_eq!(cache.size().await, 0);
+        assert!(cache.get("ethereum").await.is_none());
+        assert!(cache.get("binancecoin").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cache_get_all() {
+        let cache = PriceCache::new(1); // 1 second TTL
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+        cache
+            .insert(make_test_price("binancecoin", "BNB", 300.0))
+            .await;
+
+        // get_all returns all entries, including expired
+        let all = cache.get_all().await;
+        assert_eq!(all.len(), 2);
+
+        // Wait for expiry
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // get_all still returns expired entries
+        let all = cache.get_all().await;
+        assert_eq!(all.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_size() {
+        let cache = PriceCache::new(60);
+
+        assert_eq!(cache.size().await, 0);
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+        assert_eq!(cache.size().await, 1);
+
+        cache
+            .insert(make_test_price("binancecoin", "BNB", 300.0))
+            .await;
+        assert_eq!(cache.size().await, 2);
+
+        // Inserting same key updates, doesn't add
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2600.0))
+            .await;
+        assert_eq!(cache.size().await, 2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_fallback_to_cache_mode() {
+        let cache = PriceCache::with_options(1, true); // TTL=1s, fallback=true
+
+        cache
+            .insert(make_test_price("ethereum", "ETH", 2500.0))
+            .await;
+
+        // Wait for expiry
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // Default get() on a fallback_to_cache=true cache should return expired entries
+        let result = cache.get("ethereum").await;
+        assert!(result.is_some());
+        assert!((result.unwrap().price_usd - 2500.0).abs() < f64::EPSILON);
+    }
 }

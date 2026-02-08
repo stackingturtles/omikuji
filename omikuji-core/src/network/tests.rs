@@ -312,4 +312,181 @@ mod tests {
             }
         }
     }
+
+    mod anvil_tests {
+        use super::*;
+        use alloy::node_bindings::Anvil;
+
+        fn create_anvil_network(name: &str, rpc_url: &str) -> Network {
+            Network {
+                name: name.to_string(),
+                nodes: vec![NetworkNode {
+                    name: "Anvil Node".to_string(),
+                    rpc_url: rpc_url.to_string(),
+                    ws_url: None,
+                }],
+                transaction_type: "eip1559".to_string(),
+                gas_config: Default::default(),
+                gas_token: "ethereum".to_string(),
+                gas_token_symbol: "ETH".to_string(),
+                balance_alerts: None,
+                rpc_url: None,
+                ws_url: None,
+            }
+        }
+
+        #[tokio::test]
+        async fn test_get_chain_id_with_anvil() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let chain_id = manager.get_chain_id("anvil_test").await.unwrap();
+            assert_eq!(chain_id, 31337); // Default Anvil chain ID
+        }
+
+        #[tokio::test]
+        async fn test_get_block_number_with_anvil() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let block_number = manager.get_block_number("anvil_test").await.unwrap();
+            // Anvil starts at block 0
+            assert!(block_number <= 1);
+        }
+
+        #[tokio::test]
+        async fn test_get_wallet_address_not_loaded() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let result = manager.get_wallet_address("anvil_test");
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("No wallet address found"));
+        }
+
+        #[tokio::test]
+        async fn test_get_private_key_not_loaded() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let result = manager.get_private_key("anvil_test");
+            assert!(result.is_err());
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("No private key found"));
+        }
+
+        #[tokio::test]
+        async fn test_get_rpc_url() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let rpc_url = manager.get_rpc_url("anvil_test").unwrap();
+            assert_eq!(rpc_url, url);
+        }
+
+        #[tokio::test]
+        async fn test_get_rpc_url_not_found() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let result = manager.get_rpc_url("unknown");
+            assert!(result.is_err());
+        }
+
+        #[tokio::test]
+        async fn test_load_wallet_and_get_address() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let mut manager = NetworkManager::new(&[network]).await.unwrap();
+
+            // Use Anvil's first default private key
+            let env_key = "TEST_ANVIL_PK_WALLET_LOAD";
+            unsafe {
+                env::set_var(
+                    env_key,
+                    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+                );
+            }
+
+            manager
+                .load_wallet_from_env("anvil_test", env_key)
+                .await
+                .unwrap();
+
+            let address = manager.get_wallet_address("anvil_test").unwrap();
+            // Anvil default account 0
+            let expected: alloy::primitives::Address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+                .parse()
+                .unwrap();
+            assert_eq!(address, expected);
+
+            unsafe {
+                env::remove_var(env_key);
+            }
+        }
+
+        #[tokio::test]
+        async fn test_has_ws_support() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+
+            // No ws_url configured
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+            assert!(!manager.has_ws_support("anvil_test"));
+
+            // With ws_url configured
+            let mut network_ws = create_anvil_network("anvil_ws", &url);
+            network_ws.nodes[0].ws_url = Some("ws://localhost:8546".to_string());
+            let manager2 = NetworkManager::new(&[network_ws]).await.unwrap();
+            assert!(manager2.has_ws_support("anvil_ws"));
+        }
+
+        #[tokio::test]
+        async fn test_get_network_names_with_anvil() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let networks = vec![
+                create_anvil_network("net_a", &url),
+                create_anvil_network("net_b", &url),
+            ];
+            let manager = NetworkManager::new(&networks).await.unwrap();
+
+            let names = manager.get_network_names();
+            assert_eq!(names.len(), 2);
+            assert!(names.contains(&"net_a".to_string()));
+            assert!(names.contains(&"net_b".to_string()));
+        }
+
+        #[tokio::test]
+        async fn test_get_network_returns_config() {
+            let anvil = Anvil::new().try_spawn().expect("Anvil required");
+            let url = anvil.endpoint();
+            let network = create_anvil_network("anvil_test", &url);
+            let manager = NetworkManager::new(&[network]).await.unwrap();
+
+            let net = manager.get_network("anvil_test").await.unwrap();
+            assert_eq!(net.name, "anvil_test");
+            assert_eq!(net.transaction_type, "eip1559");
+            assert_eq!(net.gas_token_symbol, "ETH");
+        }
+    }
 }

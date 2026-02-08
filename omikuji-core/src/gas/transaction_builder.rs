@@ -300,27 +300,58 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::models::FeeBumpingConfig;
     use alloy::primitives::address;
+    use alloy::rpc::types::TransactionRequest as TxReq;
+
+    type HttpTransport = alloy::transports::http::Http<alloy::transports::http::Client>;
+    type TestBuilder = GasAwareTransactionBuilder<
+        HttpTransport,
+        alloy::network::Ethereum,
+        alloy::providers::RootProvider<HttpTransport>,
+    >;
+
+    fn test_provider() -> Arc<alloy::providers::RootProvider<HttpTransport>> {
+        Arc::new(
+            alloy::providers::ProviderBuilder::new()
+                .on_http("http://localhost:8545".parse().unwrap()),
+        )
+    }
+
+    fn test_address() -> Address {
+        address!("0000000000000000000000000000000000000001")
+    }
+
+    fn test_data() -> Bytes {
+        Bytes::from(vec![0x01, 0x02, 0x03])
+    }
+
+    fn legacy_network_config() -> NetworkConfig {
+        let mut config = NetworkConfig::default();
+        config.transaction_type = "legacy".to_string();
+        config.gas_config.gas_price_gwei = Some(30.0);
+        config
+    }
+
+    fn eip1559_network_config() -> NetworkConfig {
+        let mut config = NetworkConfig::default();
+        config.transaction_type = "eip1559".to_string();
+        config.gas_config.max_fee_per_gas_gwei = Some(50.0);
+        config.gas_config.max_priority_fee_per_gas_gwei = Some(2.0);
+        config
+    }
 
     #[test]
     fn test_transaction_builder_creation() {
-        let provider = Arc::new(
-            alloy::providers::ProviderBuilder::new()
-                .on_http("http://localhost:8545".parse().unwrap()),
-        );
-        let to = address!("0000000000000000000000000000000000000001");
-        let data = Bytes::from(vec![0x01, 0x02, 0x03]);
+        let provider = test_provider();
+        let to = test_address();
+        let data = test_data();
         let network_config = NetworkConfig::default();
 
-        let builder = GasAwareTransactionBuilder::<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
-            alloy::network::Ethereum,
-            _,
-        >::new(provider, to, data, network_config)
-        .with_value(U256::from(1000))
-        .with_gas_limit(100_000);
+        let builder = TestBuilder::new(provider, to, data, network_config)
+            .with_value(U256::from(1000))
+            .with_gas_limit(100_000);
 
-        // This is just a compile test
         assert!(builder.gas_limit_override.is_some());
     }
 
@@ -335,5 +366,169 @@ mod tests {
 
         let bumped = utils::calculate_fee_bump(base_wei, 3, 10.0);
         assert_eq!(utils::wei_to_gwei(bumped), 121.0);
+    }
+
+    #[tokio::test]
+    async fn test_build_legacy_transaction() {
+        let config = legacy_network_config();
+        let builder = TestBuilder::new(test_provider(), test_address(), test_data(), config);
+
+        let tx = builder.build().await.unwrap();
+        assert!(tx.gas_price.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_build_eip1559_transaction() {
+        let config = eip1559_network_config();
+        let builder = TestBuilder::new(test_provider(), test_address(), test_data(), config);
+
+        let tx = builder.build().await.unwrap();
+        assert!(tx.max_fee_per_gas.is_some());
+        assert!(tx.max_priority_fee_per_gas.is_some());
+    }
+
+    #[test]
+    fn test_build_with_estimate_legacy() {
+        let config = legacy_network_config();
+        let builder = TestBuilder::new(test_provider(), test_address(), test_data(), config);
+
+        let estimate = GasEstimate {
+            gas_limit: U256::from(150_000),
+            gas_price: Some(U256::from(30_000_000_000u64)),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        };
+
+        let tx = builder.build_with_estimate(&estimate).unwrap();
+        assert_eq!(tx.gas_price, Some(30_000_000_000u128));
+        assert_eq!(tx.gas, Some(150_000));
+    }
+
+    #[test]
+    fn test_build_with_estimate_eip1559() {
+        let config = eip1559_network_config();
+        let builder = TestBuilder::new(test_provider(), test_address(), test_data(), config);
+
+        let estimate = GasEstimate {
+            gas_limit: U256::from(200_000),
+            gas_price: None,
+            max_fee_per_gas: Some(U256::from(50_000_000_000u64)),
+            max_priority_fee_per_gas: Some(U256::from(2_000_000_000u64)),
+        };
+
+        let tx = builder.build_with_estimate(&estimate).unwrap();
+        assert_eq!(tx.max_fee_per_gas, Some(50_000_000_000u128));
+        assert_eq!(tx.max_priority_fee_per_gas, Some(2_000_000_000u128));
+        assert_eq!(tx.gas, Some(200_000));
+    }
+
+    #[test]
+    fn test_build_with_gas_limit_override() {
+        let config = eip1559_network_config();
+        let builder = TestBuilder::new(test_provider(), test_address(), test_data(), config)
+            .with_gas_limit(500_000);
+
+        let estimate = GasEstimate {
+            gas_limit: U256::from(200_000), // should be overridden
+            gas_price: None,
+            max_fee_per_gas: Some(U256::from(50_000_000_000u64)),
+            max_priority_fee_per_gas: Some(U256::from(2_000_000_000u64)),
+        };
+
+        let tx = builder.build_with_estimate(&estimate).unwrap();
+        assert_eq!(tx.gas, Some(500_000));
+    }
+
+    #[test]
+    fn test_build_with_value() {
+        let config = eip1559_network_config();
+        let builder = TestBuilder::new(test_provider(), test_address(), test_data(), config)
+            .with_value(U256::from(1_000_000_000_000_000_000u128)); // 1 ETH
+
+        let estimate = GasEstimate {
+            gas_limit: U256::from(200_000),
+            gas_price: None,
+            max_fee_per_gas: Some(U256::from(50_000_000_000u64)),
+            max_priority_fee_per_gas: Some(U256::from(2_000_000_000u64)),
+        };
+
+        let tx = builder.build_with_estimate(&estimate).unwrap();
+        assert_eq!(tx.value, Some(U256::from(1_000_000_000_000_000_000u128)));
+    }
+
+    #[test]
+    fn test_apply_fee_bump_legacy() {
+        let mut config = legacy_network_config();
+        config.gas_config.fee_bumping = FeeBumpingConfig {
+            enabled: true,
+            max_retries: 3,
+            initial_wait_seconds: 30,
+            fee_increase_percent: 10.0,
+        };
+
+        let mut tx = TxReq::default();
+        tx.gas_price = Some(30_000_000_000u128); // 30 gwei
+
+        TestBuilder::apply_fee_bump(&mut tx, &config, 2).unwrap();
+
+        let expected = utils::calculate_fee_bump(utils::gwei_to_wei(30.0), 2, 10.0);
+        assert_eq!(tx.gas_price, Some(expected.to::<u128>()));
+    }
+
+    #[test]
+    fn test_apply_fee_bump_eip1559() {
+        let mut config = eip1559_network_config();
+        config.gas_config.fee_bumping = FeeBumpingConfig {
+            enabled: true,
+            max_retries: 3,
+            initial_wait_seconds: 30,
+            fee_increase_percent: 10.0,
+        };
+
+        let mut tx = TxReq::default();
+        tx.max_fee_per_gas = Some(50_000_000_000u128);
+        tx.max_priority_fee_per_gas = Some(2_000_000_000u128);
+
+        TestBuilder::apply_fee_bump(&mut tx, &config, 3).unwrap();
+
+        let expected_max_fee = utils::calculate_fee_bump(utils::gwei_to_wei(50.0), 3, 10.0);
+        let expected_priority = utils::calculate_fee_bump(utils::gwei_to_wei(2.0), 3, 10.0);
+        assert_eq!(tx.max_fee_per_gas, Some(expected_max_fee.to::<u128>()));
+        assert_eq!(
+            tx.max_priority_fee_per_gas,
+            Some(expected_priority.to::<u128>())
+        );
+    }
+
+    #[test]
+    fn test_apply_fee_bump_disabled() {
+        let mut config = eip1559_network_config();
+        config.gas_config.fee_bumping.enabled = false;
+
+        let mut tx = TxReq::default();
+        tx.max_fee_per_gas = Some(50_000_000_000u128);
+        tx.max_priority_fee_per_gas = Some(2_000_000_000u128);
+
+        TestBuilder::apply_fee_bump(&mut tx, &config, 3).unwrap();
+
+        // No change when disabled
+        assert_eq!(tx.max_fee_per_gas, Some(50_000_000_000u128));
+        assert_eq!(tx.max_priority_fee_per_gas, Some(2_000_000_000u128));
+    }
+
+    #[test]
+    fn test_apply_fee_bump_first_attempt() {
+        let mut config = eip1559_network_config();
+        config.gas_config.fee_bumping.enabled = true;
+
+        let mut tx = TxReq::default();
+        tx.max_fee_per_gas = Some(50_000_000_000u128);
+        tx.max_priority_fee_per_gas = Some(2_000_000_000u128);
+
+        // attempt <= 1 should not bump
+        TestBuilder::apply_fee_bump(&mut tx, &config, 1).unwrap();
+
+        assert_eq!(tx.max_fee_per_gas, Some(50_000_000_000u128));
+        assert_eq!(tx.max_priority_fee_per_gas, Some(2_000_000_000u128));
     }
 }

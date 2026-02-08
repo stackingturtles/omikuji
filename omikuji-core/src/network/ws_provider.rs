@@ -180,6 +180,14 @@ impl WsConnectionPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::node_bindings::Anvil;
+    use alloy::providers::Provider;
+
+    fn spawn_anvil_ws() -> (alloy::node_bindings::AnvilInstance, String) {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let ws_url = anvil.ws_endpoint();
+        (anvil, ws_url)
+    }
 
     #[tokio::test]
     async fn test_ws_provider_manager_creation() {
@@ -192,5 +200,95 @@ mod tests {
         let pool = WsConnectionPool::new();
         let guard = pool.connections.read().await;
         assert_eq!(guard.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_ws_connect_with_anvil() {
+        let (_anvil, ws_url) = spawn_anvil_ws();
+        let manager = WsProviderManager::new(ws_url);
+        let result = manager.connect().await;
+        assert!(result.is_ok(), "connect() should succeed with Anvil WS");
+    }
+
+    #[tokio::test]
+    async fn test_ws_get_provider_returns_working_provider() {
+        let (_anvil, ws_url) = spawn_anvil_ws();
+        let manager = WsProviderManager::new(ws_url);
+        manager.connect().await.unwrap();
+
+        let provider = manager.get_provider().await.unwrap();
+        let chain_id = provider.get_chain_id().await.unwrap();
+        assert_eq!(chain_id, 31337, "Anvil default chain ID should be 31337");
+    }
+
+    #[tokio::test]
+    async fn test_ws_get_provider_reconnects_after_disconnect() {
+        let (_anvil, ws_url) = spawn_anvil_ws();
+        let manager = WsProviderManager::new(ws_url);
+        manager.connect().await.unwrap();
+
+        // Disconnect
+        manager.disconnect().await;
+
+        // get_provider should reconnect automatically
+        let provider = manager.get_provider().await.unwrap();
+        let chain_id = provider.get_chain_id().await.unwrap();
+        assert_eq!(chain_id, 31337);
+    }
+
+    #[tokio::test]
+    async fn test_ws_disconnect_clears_provider() {
+        let (_anvil, ws_url) = spawn_anvil_ws();
+        let manager = WsProviderManager::new(ws_url);
+        manager.connect().await.unwrap();
+
+        // Verify provider exists
+        {
+            let guard = manager.provider.read().await;
+            assert!(guard.is_some(), "Provider should exist after connect");
+        }
+
+        // Disconnect
+        manager.disconnect().await;
+
+        // Verify provider is cleared
+        {
+            let guard = manager.provider.read().await;
+            assert!(guard.is_none(), "Provider should be None after disconnect");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pool_get_provider_with_anvil() {
+        let (_anvil, ws_url) = spawn_anvil_ws();
+        let pool = WsConnectionPool::new();
+
+        let provider = pool.get_provider("anvil", &ws_url).await.unwrap();
+        let chain_id = provider.get_chain_id().await.unwrap();
+        assert_eq!(chain_id, 31337);
+
+        // Verify the connection is stored in the pool
+        let guard = pool.connections.read().await;
+        assert_eq!(guard.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_pool_disconnect_all() {
+        let (_anvil, ws_url) = spawn_anvil_ws();
+        let pool = WsConnectionPool::new();
+
+        pool.get_provider("anvil", &ws_url).await.unwrap();
+
+        // Disconnect all
+        pool.disconnect_all().await;
+
+        // The pool still has the manager entry, but the provider inside should be None
+        let guard = pool.connections.read().await;
+        let manager = guard.values().next().unwrap();
+        let provider_guard = manager.provider.read().await;
+        assert!(
+            provider_guard.is_none(),
+            "Provider should be None after disconnect_all"
+        );
     }
 }

@@ -324,3 +324,416 @@ impl NetworkMetrics {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_rpc_error_timeout() {
+        assert_eq!(NetworkMetrics::classify_rpc_error("timeout"), "timeout");
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("request timeout error"),
+            "timeout"
+        );
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("connection timeout"),
+            "timeout"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_rate_limit() {
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("rate limit exceeded"),
+            "rate_limit"
+        );
+        assert_eq!(NetworkMetrics::classify_rpc_error("429"), "rate_limit");
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("HTTP 429 Too Many Requests"),
+            "rate_limit"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_connection() {
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("connection failed"),
+            "connection"
+        );
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("transport error"),
+            "connection"
+        );
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("connection refused"),
+            "connection"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_nonce() {
+        assert_eq!(NetworkMetrics::classify_rpc_error("nonce too low"), "nonce");
+        assert_eq!(NetworkMetrics::classify_rpc_error("invalid nonce"), "nonce");
+    }
+
+    #[test]
+    fn test_classify_rpc_error_insufficient_funds() {
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("insufficient funds"),
+            "insufficient_funds"
+        );
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("insufficient funds for gas"),
+            "insufficient_funds"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_revert() {
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("execution reverted"),
+            "revert"
+        );
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("transaction reverted"),
+            "revert"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_gas() {
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("gas limit exceeded"),
+            "gas"
+        );
+        assert_eq!(NetworkMetrics::classify_rpc_error("out of gas"), "gas");
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("gas price too low"),
+            "gas"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_other() {
+        assert_eq!(NetworkMetrics::classify_rpc_error("unknown error"), "other");
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("internal server error"),
+            "other"
+        );
+    }
+
+    #[test]
+    fn test_classify_rpc_error_overlapping_patterns() {
+        // "timeout" should take precedence over "connection"
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("connection timeout"),
+            "timeout"
+        );
+        // "rate" should take precedence over "429" (both match rate_limit)
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("rate limit 429"),
+            "rate_limit"
+        );
+        // "insufficient funds" should take precedence over "gas"
+        assert_eq!(
+            NetworkMetrics::classify_rpc_error("insufficient funds for gas"),
+            "insufficient_funds"
+        );
+    }
+
+    #[test]
+    fn test_rpc_request_success() {
+        NetworkMetrics::record_rpc_request(
+            "test_net_rpc_success",
+            "eth_getBlockNumber",
+            true,
+            Duration::from_millis(50),
+            None,
+        );
+
+        // Verify counter incremented
+        let counter = RPC_REQUEST_COUNT
+            .with_label_values(&["test_net_rpc_success", "eth_getBlockNumber", "success"])
+            .get();
+        assert!(counter >= 1.0);
+    }
+
+    #[test]
+    fn test_rpc_request_failure() {
+        NetworkMetrics::record_rpc_request(
+            "test_net_rpc_fail",
+            "eth_sendTransaction",
+            false,
+            Duration::from_millis(100),
+            Some("timeout"),
+        );
+
+        // Verify error counter incremented
+        let error_counter = RPC_ERROR_COUNT
+            .with_label_values(&["test_net_rpc_fail", "timeout", "eth_sendTransaction"])
+            .get();
+        assert!(error_counter >= 1.0);
+
+        // Verify status counter incremented
+        let counter = RPC_REQUEST_COUNT
+            .with_label_values(&["test_net_rpc_fail", "eth_sendTransaction", "error"])
+            .get();
+        assert!(counter >= 1.0);
+    }
+
+    #[test]
+    fn test_chain_head_normal_advance() {
+        let network = "test_net_chain_normal";
+        NetworkMetrics::update_chain_head(network, 1000);
+        NetworkMetrics::update_chain_head(network, 1001);
+
+        let gauge = CHAIN_HEAD_BLOCK.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 1001.0);
+    }
+
+    #[test]
+    fn test_chain_head_reorg_shallow() {
+        let network = "test_net_reorg_shallow";
+        NetworkMetrics::update_chain_head(network, 1000);
+        NetworkMetrics::update_chain_head(network, 999);
+
+        let gauge = CHAIN_HEAD_BLOCK.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 999.0);
+
+        // Verify reorg counter incremented with depth "shallow"
+        let reorg_counter = CHAIN_REORG_COUNT
+            .with_label_values(&[network, "shallow"])
+            .get();
+        assert!(reorg_counter >= 1.0);
+    }
+
+    #[test]
+    fn test_chain_head_reorg_medium_depth_2() {
+        let network = "test_net_reorg_medium_2";
+        NetworkMetrics::update_chain_head(network, 2000);
+        NetworkMetrics::update_chain_head(network, 1998);
+
+        let gauge = CHAIN_HEAD_BLOCK.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 1998.0);
+
+        // Verify reorg counter incremented with depth "medium"
+        let reorg_counter = CHAIN_REORG_COUNT
+            .with_label_values(&[network, "medium"])
+            .get();
+        assert!(reorg_counter >= 1.0);
+    }
+
+    #[test]
+    fn test_chain_head_reorg_medium_depth_5() {
+        let network = "test_net_reorg_medium_5";
+        NetworkMetrics::update_chain_head(network, 3000);
+        NetworkMetrics::update_chain_head(network, 2995);
+
+        let gauge = CHAIN_HEAD_BLOCK.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 2995.0);
+
+        // Verify reorg counter incremented with depth "medium"
+        let reorg_counter = CHAIN_REORG_COUNT
+            .with_label_values(&[network, "medium"])
+            .get();
+        assert!(reorg_counter >= 1.0);
+    }
+
+    #[test]
+    fn test_chain_head_reorg_deep() {
+        let network = "test_net_reorg_deep";
+        NetworkMetrics::update_chain_head(network, 4000);
+        NetworkMetrics::update_chain_head(network, 3990);
+
+        let gauge = CHAIN_HEAD_BLOCK.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 3990.0);
+
+        // Verify reorg counter incremented with depth "deep"
+        let reorg_counter = CHAIN_REORG_COUNT
+            .with_label_values(&[network, "deep"])
+            .get();
+        assert!(reorg_counter >= 1.0);
+    }
+
+    #[test]
+    fn test_sync_status_synced() {
+        let network = "test_net_sync_on";
+        NetworkMetrics::update_sync_status(network, true);
+
+        let gauge = NETWORK_SYNC_STATUS.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 1.0);
+    }
+
+    #[test]
+    fn test_sync_status_not_synced() {
+        let network = "test_net_sync_off";
+        NetworkMetrics::update_sync_status(network, false);
+
+        let gauge = NETWORK_SYNC_STATUS.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 0.0);
+    }
+
+    #[test]
+    fn test_endpoint_health_healthy() {
+        let network = "test_net_health_on";
+        let endpoint = "http://node1.example.com";
+        NetworkMetrics::update_endpoint_health(network, endpoint, true);
+
+        let gauge = RPC_ENDPOINT_HEALTH.with_label_values(&[network, endpoint]);
+        assert_eq!(gauge.get(), 1.0);
+    }
+
+    #[test]
+    fn test_endpoint_health_unhealthy() {
+        let network = "test_net_health_off";
+        let endpoint = "http://node2.example.com";
+        NetworkMetrics::update_endpoint_health(network, endpoint, false);
+
+        let gauge = RPC_ENDPOINT_HEALTH.with_label_values(&[network, endpoint]);
+        assert_eq!(gauge.get(), 0.0);
+    }
+
+    #[test]
+    fn test_block_time() {
+        let network = "test_net_block_time";
+        NetworkMetrics::update_block_time(network, 12.5);
+
+        let gauge = BLOCK_TIME_SECONDS.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 12.5);
+    }
+
+    #[test]
+    fn test_pending_transactions_normal() {
+        let network = "test_net_pending_normal";
+        let feed = "mempool_feed_1";
+        NetworkMetrics::update_pending_transactions(network, feed, 3);
+
+        let gauge = PENDING_TRANSACTION_COUNT.with_label_values(&[network, feed]);
+        assert_eq!(gauge.get(), 3.0);
+    }
+
+    #[test]
+    fn test_pending_transactions_high() {
+        let network = "test_net_pending_high";
+        let feed = "mempool_feed_2";
+        NetworkMetrics::update_pending_transactions(network, feed, 10);
+
+        let gauge = PENDING_TRANSACTION_COUNT.with_label_values(&[network, feed]);
+        assert_eq!(gauge.get(), 10.0);
+    }
+
+    #[test]
+    fn test_gas_price() {
+        let network = "test_net_gas_price";
+        NetworkMetrics::update_gas_price(network, "p50", 25.5);
+
+        let gauge = NETWORK_GAS_PRICE_GWEI.with_label_values(&[network, "p50"]);
+        assert_eq!(gauge.get(), 25.5);
+    }
+
+    #[test]
+    fn test_connection_pool_normal() {
+        let network = "test_net_pool_normal";
+        NetworkMetrics::update_connection_pool(network, 5, 10, 20);
+
+        let active_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "active"]);
+        let idle_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "idle"]);
+        let total_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "total"]);
+
+        assert_eq!(active_gauge.get(), 5.0);
+        assert_eq!(idle_gauge.get(), 10.0);
+        assert_eq!(total_gauge.get(), 20.0);
+    }
+
+    #[test]
+    fn test_connection_pool_high_utilization() {
+        let network = "test_net_pool_high";
+        NetworkMetrics::update_connection_pool(network, 17, 3, 20);
+
+        let active_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "active"]);
+        let total_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "total"]);
+
+        assert_eq!(active_gauge.get(), 17.0);
+        assert_eq!(total_gauge.get(), 20.0);
+        // Utilization is 85%, should trigger warning
+    }
+
+    #[test]
+    fn test_connection_pool_zero_total() {
+        let network = "test_net_pool_zero";
+        NetworkMetrics::update_connection_pool(network, 0, 0, 0);
+
+        let active_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "active"]);
+        let idle_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "idle"]);
+        let total_gauge = CONNECTION_POOL_SIZE.with_label_values(&[network, "total"]);
+
+        assert_eq!(active_gauge.get(), 0.0);
+        assert_eq!(idle_gauge.get(), 0.0);
+        assert_eq!(total_gauge.get(), 0.0);
+        // Should not panic, utilization should be 0
+    }
+
+    #[test]
+    fn test_base_fee() {
+        let network = "test_net_base_fee";
+        NetworkMetrics::update_base_fee(network, 50.25);
+
+        let gauge = NETWORK_BASE_FEE_GWEI.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 50.25);
+    }
+
+    #[test]
+    fn test_priority_fee_percentile() {
+        let network = "test_net_priority_fee";
+        NetworkMetrics::update_priority_fee_percentile(network, "p90", 5.5);
+
+        let gauge = NETWORK_PRIORITY_FEE_PERCENTILES_GWEI.with_label_values(&[network, "p90"]);
+        assert_eq!(gauge.get(), 5.5);
+    }
+
+    #[test]
+    fn test_congestion_level_normal() {
+        let network = "test_net_congestion_normal";
+        NetworkMetrics::update_congestion_level(network, 45.0);
+
+        let gauge = NETWORK_CONGESTION_LEVEL.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 45.0);
+    }
+
+    #[test]
+    fn test_congestion_level_high() {
+        let network = "test_net_congestion_high";
+        NetworkMetrics::update_congestion_level(network, 85.0);
+
+        let gauge = NETWORK_CONGESTION_LEVEL.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 85.0);
+    }
+
+    #[test]
+    fn test_congestion_level_clamped_above() {
+        let network = "test_net_congestion_clamp_high";
+        NetworkMetrics::update_congestion_level(network, 150.0);
+
+        let gauge = NETWORK_CONGESTION_LEVEL.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 100.0);
+    }
+
+    #[test]
+    fn test_congestion_level_clamped_below() {
+        let network = "test_net_congestion_clamp_low";
+        NetworkMetrics::update_congestion_level(network, -10.0);
+
+        let gauge = NETWORK_CONGESTION_LEVEL.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 0.0);
+    }
+
+    #[test]
+    fn test_last_block_timestamp() {
+        let network = "test_net_timestamp";
+        NetworkMetrics::update_last_block_timestamp(network, 1704067200);
+
+        let gauge = LAST_BLOCK_TIMESTAMP.with_label_values(&[network]);
+        assert_eq!(gauge.get(), 1704067200.0);
+    }
+}

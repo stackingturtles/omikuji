@@ -1,188 +1,291 @@
-#[cfg(test)]
-mod tests {
+use super::*;
+use secrecy::ExposeSecret;
 
-    use std::collections::HashMap;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
+/// Helper: build a VaultStorage pointing at the given mockito server URL.
+async fn vault_with_server(server_url: &str) -> VaultStorage {
+    VaultStorage::new(
+        server_url,
+        "secret",
+        "omikuji",
+        "token",
+        Some("test-token".into()),
+        None,
+    )
+    .await
+    .expect("VaultStorage::new should succeed with valid token auth")
+}
 
-    // Mock Vault client for testing
-    struct MockVaultStorage {
-        storage: Arc<RwLock<HashMap<String, String>>>,
-        fail_on_get: bool,
-        fail_on_store: bool,
-    }
+/// Vault KV v2 read response wrapped in the standard Vault envelope.
+fn vault_read_response(key: &str, value: &str) -> String {
+    format!(
+        r#"{{"request_id":"test","lease_id":"","renewable":false,"lease_duration":0,"data":{{"data":{{"{key}":"{value}"}},"metadata":{{"created_time":"2024-01-01T00:00:00Z","deletion_time":"","destroyed":false,"version":1}}}}}}"#
+    )
+}
 
-    impl MockVaultStorage {
-        fn new() -> Self {
-            Self {
-                storage: Arc::new(RwLock::new(HashMap::new())),
-                fail_on_get: false,
-                fail_on_store: false,
-            }
-        }
+/// Vault KV v2 set response wrapped in the standard Vault envelope.
+fn vault_set_response() -> &'static str {
+    r#"{"request_id":"test","lease_id":"","renewable":false,"lease_duration":0,"data":{"created_time":"2024-01-01T00:00:00Z","deletion_time":"","destroyed":false,"version":1,"custom_metadata":null}}"#
+}
 
-        fn with_failures(fail_on_get: bool, fail_on_store: bool) -> Self {
-            Self {
-                storage: Arc::new(RwLock::new(HashMap::new())),
-                fail_on_get,
-                fail_on_store,
-            }
-        }
+/// Vault KV v2 list response wrapped in the standard Vault envelope.
+fn vault_list_response(keys: &[&str]) -> String {
+    let keys_json: Vec<String> = keys.iter().map(|k| format!(r#""{k}""#)).collect();
+    format!(
+        r#"{{"request_id":"test","lease_id":"","renewable":false,"lease_duration":0,"data":{{"keys":[{}]}}}}"#,
+        keys_json.join(",")
+    )
+}
 
-        async fn get_internal(&self, key: &str) -> anyhow::Result<String> {
-            if self.fail_on_get {
-                return Err(anyhow::anyhow!("Mock Vault error"));
-            }
+// ── Tests ────────────────────────────────────────────────────────────
 
-            let storage = self.storage.read().await;
-            storage
-                .get(key)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("Key not found"))
-        }
+#[tokio::test]
+async fn test_vault_new_token_auth() {
+    let server = mockito::Server::new_async().await;
+    let storage = VaultStorage::new(
+        &server.url(),
+        "secret",
+        "omikuji",
+        "token",
+        Some("test-token".into()),
+        None,
+    )
+    .await;
+    assert!(
+        storage.is_ok(),
+        "VaultStorage::new should succeed with token auth"
+    );
+}
 
-        async fn store_internal(&self, key: &str, value: &str) -> anyhow::Result<()> {
-            if self.fail_on_store {
-                return Err(anyhow::anyhow!("Mock Vault error"));
-            }
+#[tokio::test]
+async fn test_vault_new_missing_token() {
+    let server = mockito::Server::new_async().await;
+    let result = VaultStorage::new(
+        &server.url(),
+        "secret",
+        "omikuji",
+        "token",
+        None, // missing token
+        None,
+    )
+    .await;
+    assert!(result.is_err());
+    let err = result.err().unwrap().to_string();
+    assert!(
+        err.contains("Token required"),
+        "Expected 'Token required' error, got: {err}"
+    );
+}
 
-            let mut storage = self.storage.write().await;
-            storage.insert(key.to_string(), value.to_string());
-            Ok(())
-        }
-    }
+#[tokio::test]
+async fn test_vault_new_unsupported_auth() {
+    let server = mockito::Server::new_async().await;
+    let result = VaultStorage::new(
+        &server.url(),
+        "secret",
+        "omikuji",
+        "kubernetes", // unsupported
+        None,
+        None,
+    )
+    .await;
+    assert!(result.is_err());
+    let err = result.err().unwrap().to_string();
+    assert!(
+        err.contains("Unsupported auth method"),
+        "Expected 'Unsupported auth method' error, got: {err}"
+    );
+}
 
-    #[tokio::test]
-    async fn test_store_and_retrieve_key() {
-        let mock = MockVaultStorage::new();
-        let network = "mainnet";
-        let test_key = "test_private_key_12345";
+#[tokio::test]
+async fn test_vault_get_key_from_server() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/v1/secret/data/omikuji/ethereum")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(vault_read_response("private_key", "0xdeadbeef"))
+        .create_async()
+        .await;
 
-        // Store key
-        mock.store_internal(network, test_key).await.unwrap();
+    let storage = vault_with_server(&server.url()).await;
+    let key = storage.get_key("ethereum").await.unwrap();
+    assert_eq!(key.expose_secret(), "0xdeadbeef");
 
-        // Retrieve key
-        let retrieved = mock.get_internal(network).await.unwrap();
-        assert_eq!(retrieved, test_key);
-    }
+    mock.assert_async().await;
+}
 
-    #[tokio::test]
-    async fn test_get_nonexistent_key() {
-        let mock = MockVaultStorage::new();
-        let result = mock.get_internal("nonexistent").await;
+#[tokio::test]
+async fn test_vault_get_key_caches_result() {
+    let mut server = mockito::Server::new_async().await;
+    // Only expect ONE request — the second get_key should use cache.
+    let mock = server
+        .mock("GET", "/v1/secret/data/omikuji/ethereum")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(vault_read_response("private_key", "0xcached"))
+        .expect(1)
+        .create_async()
+        .await;
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Key not found"));
-    }
+    let storage = vault_with_server(&server.url()).await;
 
-    #[tokio::test]
-    async fn test_cache_behavior() {
-        // This tests the caching logic conceptually
-        let mock = MockVaultStorage::new();
-        let network = "testnet";
-        let test_key = "cached_key";
+    let key1 = storage.get_key("ethereum").await.unwrap();
+    assert_eq!(key1.expose_secret(), "0xcached");
 
-        // Store key
-        mock.store_internal(network, test_key).await.unwrap();
+    // Second call should return cached value without making another HTTP request.
+    let key2 = storage.get_key("ethereum").await.unwrap();
+    assert_eq!(key2.expose_secret(), "0xcached");
 
-        // First retrieval (would cache in real implementation)
-        let first = mock.get_internal(network).await.unwrap();
-        assert_eq!(first, test_key);
+    mock.assert_async().await;
+}
 
-        // Second retrieval (would use cache in real implementation)
-        let second = mock.get_internal(network).await.unwrap();
-        assert_eq!(second, test_key);
-    }
+#[tokio::test]
+async fn test_vault_get_key_fallback_to_cache() {
+    let mut server = mockito::Server::new_async().await;
 
-    #[tokio::test]
-    async fn test_fallback_on_error() {
-        let mock = MockVaultStorage::new();
-        let network = "mainnet";
-        let test_key = "fallback_key";
+    // First call succeeds and populates cache.
+    let mock_ok = server
+        .mock("GET", "/v1/secret/data/omikuji/ethereum")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(vault_read_response("private_key", "0xfallback"))
+        .create_async()
+        .await;
 
-        // Store key successfully
-        mock.store_internal(network, test_key).await.unwrap();
+    let storage = VaultStorage::new(
+        &server.url(),
+        "secret",
+        "omikuji",
+        "token",
+        Some("test-token".into()),
+        Some(0), // TTL = 0 seconds so cache expires immediately
+    )
+    .await
+    .unwrap();
 
-        // Simulate Vault becoming unavailable
-        let failing_mock = MockVaultStorage::with_failures(true, false);
-        failing_mock
-            .storage
-            .write()
-            .await
-            .insert(network.to_string(), test_key.to_string());
+    let key1 = storage.get_key("ethereum").await.unwrap();
+    assert_eq!(key1.expose_secret(), "0xfallback");
+    mock_ok.assert_async().await;
 
-        // Should fail since we don't have cache in mock
-        let result = failing_mock.get_internal(network).await;
-        assert!(result.is_err());
-    }
+    // Wait a tiny bit so the cache entry is expired (TTL=0).
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-    #[tokio::test]
-    async fn test_list_keys() {
-        let mock = MockVaultStorage::new();
+    // Second call: Vault returns 500, but should fall back to expired cached value.
+    let mock_err = server
+        .mock("GET", "/v1/secret/data/omikuji/ethereum")
+        .match_query(mockito::Matcher::Any)
+        .with_status(500)
+        .with_body(r#"{"errors":["internal error"]}"#)
+        .create_async()
+        .await;
 
-        // Store multiple keys
-        mock.store_internal("mainnet", "key1").await.unwrap();
-        mock.store_internal("testnet", "key2").await.unwrap();
-        mock.store_internal("sepolia", "key3").await.unwrap();
+    let key2 = storage.get_key("ethereum").await.unwrap();
+    assert_eq!(
+        key2.expose_secret(),
+        "0xfallback",
+        "Should fall back to expired cache on Vault error"
+    );
+    mock_err.assert_async().await;
+}
 
-        // List should contain all networks
-        let storage = mock.storage.read().await;
-        let keys: Vec<String> = storage.keys().cloned().collect();
+#[tokio::test]
+async fn test_vault_store_key() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("POST", "/v1/secret/data/omikuji/polygon")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(vault_set_response())
+        .create_async()
+        .await;
 
-        assert_eq!(keys.len(), 3);
-        assert!(keys.contains(&"mainnet".to_string()));
-        assert!(keys.contains(&"testnet".to_string()));
-        assert!(keys.contains(&"sepolia".to_string()));
-    }
+    let storage = vault_with_server(&server.url()).await;
+    let secret = SecretString::from("0xnewkey".to_string());
+    storage.store_key("polygon", secret).await.unwrap();
 
-    #[tokio::test]
-    async fn test_remove_key() {
-        let mock = MockVaultStorage::new();
-        let network = "mainnet";
+    mock.assert_async().await;
+}
 
-        // Store and verify
-        mock.store_internal(network, "key_to_remove").await.unwrap();
-        assert!(mock.get_internal(network).await.is_ok());
+#[tokio::test]
+async fn test_vault_get_secret_path() {
+    let server = mockito::Server::new_async().await;
 
-        // Remove
-        mock.storage.write().await.remove(network);
+    // With prefix
+    let storage = vault_with_server(&server.url()).await;
+    assert_eq!(storage.get_secret_path("ethereum"), "omikuji/ethereum");
 
-        // Verify removal
-        assert!(mock.get_internal(network).await.is_err());
-    }
+    // Without prefix (empty)
+    let storage_no_prefix = VaultStorage::new(
+        &server.url(),
+        "secret",
+        "",
+        "token",
+        Some("test-token".into()),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(storage_no_prefix.get_secret_path("ethereum"), "ethereum");
+}
 
-    #[tokio::test]
-    async fn test_audit_logging() {
-        // In a real test, we would capture logs and verify audit entries
-        // For now, this is a placeholder to ensure audit logging is considered
-        let mock = MockVaultStorage::new();
+#[tokio::test]
+async fn test_vault_remove_key() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("DELETE", "/v1/secret/data/omikuji/ethereum")
+        .match_query(mockito::Matcher::Any)
+        .with_status(204)
+        .create_async()
+        .await;
 
-        // These operations should generate audit logs in real implementation
-        let _ = mock.store_internal("mainnet", "key").await;
-        let _ = mock.get_internal("mainnet").await;
-        let _ = mock.storage.write().await.remove("mainnet");
+    let storage = vault_with_server(&server.url()).await;
+    storage.remove_key("ethereum").await.unwrap();
 
-        // In production, verify that audit logs were created with:
-        // - operation type
-        // - network name
-        // - success/failure status
-        // - timestamp
-    }
+    mock.assert_async().await;
+}
 
-    #[tokio::test]
-    async fn test_secret_data_format() {
-        // Test that we can parse different Vault secret formats
-        let test_cases = vec![
-            (r#"{"private_key": "key1"}"#, "key1"),
-            (r#"{"key": "key2"}"#, "key2"),
-            (r#"{"value": "key3"}"#, "key3"),
-            ("plain_key", "plain_key"), // Plain text fallback
-        ];
+#[tokio::test]
+async fn test_vault_list_keys() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("LIST", "/v1/secret/metadata/omikuji")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(vault_list_response(&["ethereum", "polygon"]))
+        .create_async()
+        .await;
 
-        for (_input, expected) in test_cases {
-            // In real implementation, this would test parse_secret_value method
-            // For now, we just verify the test data structure
-            assert!(!expected.is_empty());
-        }
-    }
+    let storage = vault_with_server(&server.url()).await;
+    let keys = storage.list_keys().await.unwrap();
+    assert_eq!(keys.len(), 2);
+    assert!(keys.contains(&"ethereum".to_string()));
+    assert!(keys.contains(&"polygon".to_string()));
+
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_vault_list_keys_filters_directories() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("LIST", "/v1/secret/metadata/omikuji")
+        .match_query(mockito::Matcher::Any)
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(vault_list_response(&["ethereum", "subdir/", "polygon"]))
+        .create_async()
+        .await;
+
+    let storage = vault_with_server(&server.url()).await;
+    let keys = storage.list_keys().await.unwrap();
+    // "subdir/" should be filtered out
+    assert_eq!(keys.len(), 2);
+    assert!(!keys.contains(&"subdir/".to_string()));
+
+    mock.assert_async().await;
 }

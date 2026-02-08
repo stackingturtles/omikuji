@@ -281,6 +281,27 @@ impl GasPriceManager {
         (size, self.config.update_frequency)
     }
 
+    /// Create a manager with injected providers (for testing)
+    #[cfg(test)]
+    pub(crate) fn with_providers(
+        config: GasPriceFeedConfig,
+        providers: Vec<Box<dyn PriceProvider>>,
+        token_mappings: HashMap<String, String>,
+    ) -> Self {
+        let cache = Arc::new(PriceCache::with_options(
+            config.update_frequency,
+            config.fallback_to_cache,
+        ));
+
+        Self {
+            config,
+            providers,
+            cache,
+            token_mappings: Arc::new(RwLock::new(token_mappings)),
+            db_repo: None,
+        }
+    }
+
     /// Update staleness metrics for all cached prices
     async fn update_staleness_metrics(&self) {
         use crate::metrics::gas_metrics::GAS_PRICE_STALENESS_SECONDS;
@@ -309,5 +330,412 @@ impl GasPriceManager {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gas_price::models::{
+        GasPriceFeedConfig, GasTokenPrice, PriceFetchError, PriceProvider,
+    };
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// A mock price provider for testing
+    struct MockPriceProvider {
+        name: String,
+        prices: Result<Vec<GasTokenPrice>, PriceFetchError>,
+    }
+
+    impl MockPriceProvider {
+        fn success(prices: Vec<GasTokenPrice>) -> Self {
+            Self {
+                name: "mock".to_string(),
+                prices: Ok(prices),
+            }
+        }
+
+        fn failure(error: PriceFetchError) -> Self {
+            Self {
+                name: "mock".to_string(),
+                prices: Err(error),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl PriceProvider for MockPriceProvider {
+        async fn fetch_prices(
+            &self,
+            _token_ids: &[String],
+        ) -> Result<Vec<GasTokenPrice>, PriceFetchError> {
+            match &self.prices {
+                Ok(prices) => Ok(prices.clone()),
+                Err(_) => Err(PriceFetchError::ProviderError(
+                    "Mock provider error".to_string(),
+                )),
+            }
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+    }
+
+    fn now_timestamp() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    fn make_price(token_id: &str, symbol: &str, price_usd: f64) -> GasTokenPrice {
+        GasTokenPrice {
+            token_id: token_id.to_string(),
+            symbol: symbol.to_string(),
+            price_usd,
+            timestamp: now_timestamp(),
+            source: "mock".to_string(),
+        }
+    }
+
+    fn default_mappings() -> HashMap<String, String> {
+        let mut m = HashMap::new();
+        m.insert("ethereum".to_string(), "ethereum".to_string());
+        m.insert("bsc".to_string(), "binancecoin".to_string());
+        m
+    }
+
+    fn enabled_config() -> GasPriceFeedConfig {
+        GasPriceFeedConfig {
+            enabled: true,
+            update_frequency: 3600,
+            fallback_to_cache: false,
+            ..GasPriceFeedConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_prices_success() {
+        let prices = vec![
+            make_price("ethereum", "ETH", 2500.0),
+            make_price("binancecoin", "BNB", 300.0),
+        ];
+        let provider = MockPriceProvider::success(prices);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        let result = manager.update_prices().await;
+        assert!(result.is_ok());
+
+        // Verify cache was populated
+        let eth_price = manager.cache.get("ethereum").await;
+        assert!(eth_price.is_some());
+        assert!((eth_price.unwrap().price_usd - 2500.0).abs() < f64::EPSILON);
+
+        let bnb_price = manager.cache.get("binancecoin").await;
+        assert!(bnb_price.is_some());
+        assert!((bnb_price.unwrap().price_usd - 300.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_update_prices_provider_failure_with_fallback() {
+        let provider =
+            MockPriceProvider::failure(PriceFetchError::ProviderError("test error".to_string()));
+
+        let config = GasPriceFeedConfig {
+            enabled: true,
+            update_frequency: 3600,
+            fallback_to_cache: true,
+            ..GasPriceFeedConfig::default()
+        };
+
+        let manager =
+            GasPriceManager::with_providers(config, vec![Box::new(provider)], default_mappings());
+
+        let result = manager.update_prices().await;
+        assert!(result.is_ok(), "Should succeed with fallback_to_cache=true");
+    }
+
+    #[tokio::test]
+    async fn test_update_prices_provider_failure_no_fallback() {
+        let provider =
+            MockPriceProvider::failure(PriceFetchError::ProviderError("test error".to_string()));
+
+        let config = GasPriceFeedConfig {
+            enabled: true,
+            update_frequency: 3600,
+            fallback_to_cache: false,
+            ..GasPriceFeedConfig::default()
+        };
+
+        let manager =
+            GasPriceManager::with_providers(config, vec![Box::new(provider)], default_mappings());
+
+        let result = manager.update_prices().await;
+        assert!(result.is_err(), "Should fail with fallback_to_cache=false");
+    }
+
+    #[tokio::test]
+    async fn test_update_prices_empty_tokens() {
+        let provider = MockPriceProvider::success(vec![]);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            HashMap::new(), // empty mappings
+        );
+
+        let result = manager.update_prices().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_price_cached() {
+        let prices = vec![make_price("ethereum", "ETH", 2500.0)];
+        let provider = MockPriceProvider::success(prices);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        // Populate cache
+        manager.update_prices().await.unwrap();
+
+        // Retrieve by network name
+        let price = manager.get_price("ethereum").await;
+        assert!(price.is_some());
+        assert!((price.unwrap().price_usd - 2500.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_get_price_not_found() {
+        let provider = MockPriceProvider::success(vec![]);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        let price = manager.get_price("ethereum").await;
+        assert!(price.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_price_unknown_network() {
+        let provider = MockPriceProvider::success(vec![]);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        let price = manager.get_price("unknown-network").await;
+        assert!(price.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_prices_multiple() {
+        let prices = vec![
+            make_price("ethereum", "ETH", 2500.0),
+            make_price("binancecoin", "BNB", 300.0),
+        ];
+        let provider = MockPriceProvider::success(prices);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        manager.update_prices().await.unwrap();
+
+        let networks = vec!["ethereum".to_string(), "bsc".to_string()];
+        let result = manager.get_prices(&networks).await;
+
+        assert_eq!(result.len(), 2);
+        assert!(result.contains_key("ethereum"));
+        assert!(result.contains_key("bsc"));
+    }
+
+    #[tokio::test]
+    async fn test_calculate_usd_cost() {
+        let prices = vec![make_price("ethereum", "ETH", 2500.0)];
+        let provider = MockPriceProvider::success(prices);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        manager.update_prices().await.unwrap();
+
+        // 100,000 gas * 30 gwei = 0.003 ETH * $2500 = $7.50
+        let cost = manager
+            .calculate_usd_cost(
+                "ethereum",
+                "eth_usd",
+                "0xabc123",
+                100_000,
+                30_000_000_000, // 30 gwei
+            )
+            .await;
+
+        assert!(cost.is_some());
+        let cost = cost.unwrap();
+        assert!((cost.total_cost_usd - 7.5).abs() < 0.01);
+        assert_eq!(cost.network, "ethereum");
+        assert_eq!(cost.feed_name, "eth_usd");
+        assert_eq!(cost.transaction_hash, "0xabc123");
+        assert_eq!(cost.gas_used, 100_000);
+        assert_eq!(cost.gas_price_wei, 30_000_000_000);
+        assert!((cost.gas_token_price_usd - 2500.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_usd_cost_no_price() {
+        let provider = MockPriceProvider::success(vec![]);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        let cost = manager
+            .calculate_usd_cost("ethereum", "eth_usd", "0xabc", 100_000, 30_000_000_000)
+            .await;
+
+        assert!(cost.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_is_enabled() {
+        let provider = MockPriceProvider::success(vec![]);
+
+        let enabled_mgr = GasPriceManager::with_providers(
+            GasPriceFeedConfig {
+                enabled: true,
+                ..GasPriceFeedConfig::default()
+            },
+            vec![Box::new(provider)],
+            HashMap::new(),
+        );
+        assert!(enabled_mgr.is_enabled());
+
+        let provider2 = MockPriceProvider::success(vec![]);
+        let disabled_mgr = GasPriceManager::with_providers(
+            GasPriceFeedConfig {
+                enabled: false,
+                ..GasPriceFeedConfig::default()
+            },
+            vec![Box::new(provider2)],
+            HashMap::new(),
+        );
+        assert!(!disabled_mgr.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_cache_stats() {
+        let prices = vec![make_price("ethereum", "ETH", 2500.0)];
+        let provider = MockPriceProvider::success(prices);
+
+        let config = GasPriceFeedConfig {
+            enabled: true,
+            update_frequency: 7200,
+            ..GasPriceFeedConfig::default()
+        };
+
+        let manager =
+            GasPriceManager::with_providers(config, vec![Box::new(provider)], default_mappings());
+
+        manager.update_prices().await.unwrap();
+
+        let (size, freq) = manager.cache_stats().await;
+        assert!(size >= 1);
+        assert_eq!(freq, 7200);
+    }
+
+    #[tokio::test]
+    async fn test_start_disabled() {
+        let provider = MockPriceProvider::success(vec![]);
+
+        let config = GasPriceFeedConfig {
+            enabled: false,
+            ..GasPriceFeedConfig::default()
+        };
+
+        let manager = Arc::new(GasPriceManager::with_providers(
+            config,
+            vec![Box::new(provider)],
+            HashMap::new(),
+        ));
+
+        // start() should return immediately when disabled
+        manager.start().await;
+        // If we get here, it didn't hang — test passes
+    }
+
+    #[tokio::test]
+    async fn test_update_metrics() {
+        let prices = vec![
+            make_price("ethereum", "ETH", 2500.0),
+            make_price("binancecoin", "BNB", 300.0),
+        ];
+        let provider = MockPriceProvider::success(prices);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        // update_prices internally calls update_metrics
+        let result = manager.update_prices().await;
+        assert!(result.is_ok());
+
+        // Verify Prometheus gauges were set (read them back)
+        use crate::metrics::gas_metrics::GAS_TOKEN_PRICE_USD;
+        let eth_metric = GAS_TOKEN_PRICE_USD
+            .with_label_values(&["ethereum", "ETH"])
+            .get();
+        assert!((eth_metric - 2500.0).abs() < f64::EPSILON);
+
+        let bsc_metric = GAS_TOKEN_PRICE_USD.with_label_values(&["bsc", "BNB"]).get();
+        assert!((bsc_metric - 300.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_update_staleness_metrics() {
+        let prices = vec![make_price("ethereum", "ETH", 2500.0)];
+        let provider = MockPriceProvider::success(prices);
+
+        let manager = GasPriceManager::with_providers(
+            enabled_config(),
+            vec![Box::new(provider)],
+            default_mappings(),
+        );
+
+        manager.update_prices().await.unwrap();
+
+        // Call staleness metrics update
+        manager.update_staleness_metrics().await;
+
+        use crate::metrics::gas_metrics::GAS_PRICE_STALENESS_SECONDS;
+        let staleness = GAS_PRICE_STALENESS_SECONDS
+            .with_label_values(&["ethereum", "ETH"])
+            .get();
+        // Staleness should be very small (just fetched)
+        assert!(staleness < 5.0);
     }
 }

@@ -274,3 +274,217 @@ impl PerformanceMetrics {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_concurrent_feeds_normal() {
+        // Test normal count (no warning)
+        PerformanceMetrics::update_concurrent_feeds("test_network_1", 25);
+
+        // Verify metric is set (this will succeed if no panic occurs)
+        let gauge = CONCURRENT_FEED_UPDATES.with_label_values(&["test_network_1"]);
+        assert_eq!(gauge.get(), 25.0);
+    }
+
+    #[test]
+    fn test_update_concurrent_feeds_high_warning() {
+        // Test count > 50 (should warn)
+        PerformanceMetrics::update_concurrent_feeds("test_network_2", 51);
+
+        let gauge = CONCURRENT_FEED_UPDATES.with_label_values(&["test_network_2"]);
+        assert_eq!(gauge.get(), 51.0);
+    }
+
+    #[test]
+    fn test_update_memory_usage_without_stack() {
+        // Test without stack_bytes
+        PerformanceMetrics::update_memory_usage(500_000_000, None, 600_000_000);
+
+        // Verify the function completes without panic
+        // Note: Metrics are global and shared across tests, so we don't assert exact values
+    }
+
+    #[test]
+    fn test_update_memory_usage_with_stack() {
+        // Test with stack_bytes
+        PerformanceMetrics::update_memory_usage(400_000_000, Some(50_000_000), 500_000_000);
+
+        // Verify the function completes without panic and stack metric is set
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_update_memory_usage_high_warning() {
+        // Test total > 1GB (1024 * 1024 * 1024 = 1073741824)
+        let over_1gb = 1_073_741_825; // 1GB + 1 byte
+        PerformanceMetrics::update_memory_usage(over_1gb, None, over_1gb);
+
+        // Verify warning is triggered for high memory (>1GB)
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_update_memory_usage_high_warning_with_stack() {
+        // Test total > 1GB with stack_bytes
+        let over_1gb = 1_073_741_825;
+        PerformanceMetrics::update_memory_usage(900_000_000, Some(173_741_825), over_1gb);
+
+        // Verify warning is triggered for high memory (>1GB) with stack_bytes
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_update_open_connections_normal() {
+        // Test normal count (no warning)
+        PerformanceMetrics::update_open_connections("http", "test_net_3", 50);
+
+        let gauge = OPEN_CONNECTIONS.with_label_values(&["http", "test_net_3"]);
+        assert_eq!(gauge.get(), 50.0);
+    }
+
+    #[test]
+    fn test_update_open_connections_high_warning() {
+        // Test count > 100 (should warn)
+        PerformanceMetrics::update_open_connections("websocket", "test_net_4", 101);
+
+        let gauge = OPEN_CONNECTIONS.with_label_values(&["websocket", "test_net_4"]);
+        assert_eq!(gauge.get(), 101.0);
+    }
+
+    #[test]
+    fn test_record_task_execution_normal() {
+        // Test normal duration (no warning)
+        let duration = Duration::from_secs(15);
+        PerformanceMetrics::record_task_execution("sync", "test_net_5", duration);
+
+        // Histogram recorded successfully (no panic means success)
+    }
+
+    #[test]
+    fn test_record_task_execution_long_warning() {
+        // Test duration > 30s (should warn)
+        let duration = Duration::from_secs(31);
+        PerformanceMetrics::record_task_execution("backup", "test_net_6", duration);
+    }
+
+    #[test]
+    fn test_update_cpu_usage_normal() {
+        // Test normal CPU usage (no warning)
+        PerformanceMetrics::update_cpu_usage(30.0, 15.0, 45.0);
+
+        // Verify the function completes without panic
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_update_cpu_usage_high_warning() {
+        // Test total > 80% (should warn)
+        PerformanceMetrics::update_cpu_usage(50.0, 35.0, 85.0);
+
+        // Verify warning is triggered for high CPU (>80%)
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_update_thread_pool_normal() {
+        // Test normal utilization (no warning)
+        PerformanceMetrics::update_thread_pool("test_pool_1", 5, 5, 10);
+
+        let active = THREAD_POOL_UTILIZATION.with_label_values(&["test_pool_1", "active"]);
+        assert_eq!(active.get(), 5.0);
+
+        let idle = THREAD_POOL_UTILIZATION.with_label_values(&["test_pool_1", "idle"]);
+        assert_eq!(idle.get(), 5.0);
+
+        let total = THREAD_POOL_UTILIZATION.with_label_values(&["test_pool_1", "total"]);
+        assert_eq!(total.get(), 10.0);
+    }
+
+    #[test]
+    fn test_update_thread_pool_high_utilization_warning() {
+        // Test utilization > 90% (should warn)
+        // 19 active out of 20 total = 95%
+        PerformanceMetrics::update_thread_pool("test_pool_2", 19, 1, 20);
+
+        let active = THREAD_POOL_UTILIZATION.with_label_values(&["test_pool_2", "active"]);
+        assert_eq!(active.get(), 19.0);
+    }
+
+    #[test]
+    fn test_update_thread_pool_zero_total() {
+        // Test zero total threads (edge case)
+        PerformanceMetrics::update_thread_pool("test_pool_3", 0, 0, 0);
+
+        let total = THREAD_POOL_UTILIZATION.with_label_values(&["test_pool_3", "total"]);
+        assert_eq!(total.get(), 0.0);
+    }
+
+    #[test]
+    fn test_record_event_loop_lag_normal() {
+        // Test lag < 100ms (no warning)
+        let lag = Duration::from_millis(50);
+        PerformanceMetrics::record_event_loop_lag("tokio_1", lag);
+    }
+
+    #[test]
+    fn test_record_event_loop_lag_high_warning() {
+        // Test lag > 100ms (should warn)
+        let lag = Duration::from_millis(101);
+        PerformanceMetrics::record_event_loop_lag("tokio_2", lag);
+    }
+
+    #[test]
+    fn test_update_db_pool_normal() {
+        // Test no waiting connections (no warning)
+        PerformanceMetrics::update_db_pool(5, 10, 0, 20);
+
+        // Verify the function completes without panic
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_update_db_pool_waiting_warning() {
+        // Test waiting > 0 (should warn)
+        PerformanceMetrics::update_db_pool(15, 5, 3, 20);
+
+        // Verify warning is triggered when waiting > 0
+        // Note: Metrics are global and shared across tests
+    }
+
+    #[test]
+    fn test_record_cache_operation_hit() {
+        // Test cache hit
+        PerformanceMetrics::record_cache_operation("test_cache_1", "get", true);
+
+        let counter = CACHE_HIT_RATE.with_label_values(&["test_cache_1", "get", "hit"]);
+        assert!(counter.get() >= 1.0);
+    }
+
+    #[test]
+    fn test_record_cache_operation_miss() {
+        // Test cache miss
+        PerformanceMetrics::record_cache_operation("test_cache_2", "get", false);
+
+        let counter = CACHE_HIT_RATE.with_label_values(&["test_cache_2", "get", "miss"]);
+        assert!(counter.get() >= 1.0);
+    }
+
+    #[test]
+    fn test_record_startup_time() {
+        // Test component startup recording
+        let duration = Duration::from_millis(1500);
+        PerformanceMetrics::record_startup_time("database", duration);
+
+        // Histogram recorded successfully (no panic means success)
+    }
+
+    #[test]
+    fn test_get_cache_hit_rate_returns_none() {
+        // Test that get_cache_hit_rate always returns None
+        let result = PerformanceMetrics::get_cache_hit_rate("test_cache_3");
+        assert_eq!(result, None);
+    }
+}

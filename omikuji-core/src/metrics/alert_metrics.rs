@@ -285,3 +285,366 @@ impl AlertMetrics {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_record_critical_error() {
+        AlertMetrics::record_critical_error(
+            "connection_timeout",
+            "feed_fetcher_1",
+            "ethereum_mainnet_1",
+            "Connection to upstream failed",
+        );
+
+        let metric = CRITICAL_ERRORS
+            .get_metric_with_label_values(&[
+                "connection_timeout",
+                "feed_fetcher_1",
+                "ethereum_mainnet_1",
+            ])
+            .expect("Metric should exist");
+        assert!(metric.get() >= 1.0, "Counter should be incremented");
+    }
+
+    #[test]
+    fn test_feed_lag_alert_ok() {
+        AlertMetrics::update_feed_lag_alert("btc_usd_feed_1", "ethereum_mainnet_2", 50.0, 100.0);
+
+        let metric = FEED_UPDATE_LAG_ALERT
+            .get_metric_with_label_values(&["btc_usd_feed_1", "ethereum_mainnet_2", "ok"])
+            .expect("Metric should exist");
+        assert_eq!(metric.get(), 0.0, "Alert status should be 0.0 for ok");
+    }
+
+    #[test]
+    fn test_feed_lag_alert_medium_boundary() {
+        // Exactly at threshold boundary
+        AlertMetrics::update_feed_lag_alert("eth_usd_feed_1", "polygon_mainnet_1", 100.1, 100.0);
+
+        let metric = FEED_UPDATE_LAG_ALERT
+            .get_metric_with_label_values(&["eth_usd_feed_1", "polygon_mainnet_1", "medium"])
+            .expect("Metric should exist");
+        assert_eq!(metric.get(), 1.0, "Alert status should be 1.0 for medium");
+    }
+
+    #[test]
+    fn test_feed_lag_alert_high_boundary() {
+        // Just above 2x threshold
+        AlertMetrics::update_feed_lag_alert("sol_usd_feed_1", "solana_mainnet_1", 200.1, 100.0);
+
+        let metric = FEED_UPDATE_LAG_ALERT
+            .get_metric_with_label_values(&["sol_usd_feed_1", "solana_mainnet_1", "high"])
+            .expect("Metric should exist");
+        assert_eq!(metric.get(), 1.0, "Alert status should be 1.0 for high");
+    }
+
+    #[test]
+    fn test_feed_lag_alert_critical_boundary() {
+        // Just above 3x threshold
+        AlertMetrics::update_feed_lag_alert("avax_usd_feed_1", "avalanche_mainnet_1", 300.1, 100.0);
+
+        let metric = FEED_UPDATE_LAG_ALERT
+            .get_metric_with_label_values(&["avax_usd_feed_1", "avalanche_mainnet_1", "critical"])
+            .expect("Metric should exist");
+        assert_eq!(metric.get(), 1.0, "Alert status should be 1.0 for critical");
+    }
+
+    #[test]
+    fn test_record_retry_exhaustion() {
+        AlertMetrics::record_retry_exhaustion(
+            "link_usd_feed_1",
+            "arbitrum_mainnet_1",
+            "nonce_too_low",
+            5,
+        );
+
+        let metric = TRANSACTION_RETRY_EXHAUSTED
+            .get_metric_with_label_values(&[
+                "link_usd_feed_1",
+                "arbitrum_mainnet_1",
+                "nonce_too_low",
+            ])
+            .expect("Metric should exist");
+        assert!(metric.get() >= 1.0, "Counter should be incremented");
+    }
+
+    #[test]
+    fn test_system_health_perfect_score() {
+        AlertMetrics::update_system_health("oracle_service_1", 100.0, 100.0, 0.0);
+
+        let metric = SYSTEM_HEALTH_SCORE
+            .get_metric_with_label_values(&["oracle_service_1"])
+            .expect("Metric should exist");
+
+        // 100*0.4 + 100*0.3 + (100-0)*0.3 = 40 + 30 + 30 = 100
+        assert_eq!(metric.get(), 100.0, "Perfect scores should yield 100.0");
+    }
+
+    #[test]
+    fn test_system_health_worst_score() {
+        AlertMetrics::update_system_health("oracle_service_2", 0.0, 0.0, 100.0);
+
+        let metric = SYSTEM_HEALTH_SCORE
+            .get_metric_with_label_values(&["oracle_service_2"])
+            .expect("Metric should exist");
+
+        // 0*0.4 + 0*0.3 + (100-100)*0.3 = 0 + 0 + 0 = 0
+        assert_eq!(metric.get(), 0.0, "Worst scores should yield 0.0");
+    }
+
+    #[test]
+    fn test_system_health_mixed_score() {
+        AlertMetrics::update_system_health("oracle_service_3", 80.0, 60.0, 10.0);
+
+        let metric = SYSTEM_HEALTH_SCORE
+            .get_metric_with_label_values(&["oracle_service_3"])
+            .expect("Metric should exist");
+
+        // 80*0.4 + 60*0.3 + (100-10)*0.3 = 32 + 18 + 27 = 77
+        assert_eq!(
+            metric.get(),
+            77.0,
+            "Mixed scores should calculate correctly"
+        );
+    }
+
+    #[test]
+    fn test_system_health_low_score_threshold() {
+        AlertMetrics::update_system_health("oracle_service_4", 50.0, 40.0, 50.0);
+
+        let metric = SYSTEM_HEALTH_SCORE
+            .get_metric_with_label_values(&["oracle_service_4"])
+            .expect("Metric should exist");
+
+        // 50*0.4 + 40*0.3 + (100-50)*0.3 = 20 + 12 + 15 = 47
+        assert_eq!(
+            metric.get(),
+            47.0,
+            "Low health score should trigger error log"
+        );
+    }
+
+    #[test]
+    fn test_alert_suppression_enabled() {
+        AlertMetrics::update_alert_suppression("feed_lag_alert_1", true, "maintenance_window");
+
+        let metric = ALERT_SUPPRESSION_ACTIVE
+            .get_metric_with_label_values(&["feed_lag_alert_1", "maintenance_window"])
+            .expect("Metric should exist");
+        assert_eq!(metric.get(), 1.0, "Suppression should be 1.0 when enabled");
+    }
+
+    #[test]
+    fn test_alert_suppression_disabled() {
+        AlertMetrics::update_alert_suppression("feed_lag_alert_2", false, "normal_operation");
+
+        let metric = ALERT_SUPPRESSION_ACTIVE
+            .get_metric_with_label_values(&["feed_lag_alert_2", "normal_operation"])
+            .expect("Metric should exist");
+        assert_eq!(metric.get(), 0.0, "Suppression should be 0.0 when disabled");
+    }
+
+    #[test]
+    fn test_cascading_failure_risk_low() {
+        AlertMetrics::update_cascading_failure_risk("optimism_mainnet_1", 10.0, 5.0, 2.0);
+
+        let overall = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["optimism_mainnet_1", "overall"])
+            .expect("Overall metric should exist");
+
+        // 10*0.4 + 5*0.4 + 2*0.2 = 4 + 2 + 0.4 = 6.4
+        assert_eq!(overall.get(), 6.4, "Low risk should calculate correctly");
+    }
+
+    #[test]
+    fn test_cascading_failure_risk_high() {
+        AlertMetrics::update_cascading_failure_risk("base_mainnet_1", 80.0, 90.0, 60.0);
+
+        let overall = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["base_mainnet_1", "overall"])
+            .expect("Overall metric should exist");
+
+        // 80*0.4 + 90*0.4 + 60*0.2 = 32 + 36 + 12 = 80
+        assert_eq!(overall.get(), 80.0, "High risk should calculate correctly");
+
+        let error_rate = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["base_mainnet_1", "error_rate"])
+            .expect("Error rate metric should exist");
+        assert_eq!(error_rate.get(), 80.0);
+
+        let dependencies = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["base_mainnet_1", "dependencies"])
+            .expect("Dependencies metric should exist");
+        assert_eq!(dependencies.get(), 90.0);
+
+        let resources = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["base_mainnet_1", "resources"])
+            .expect("Resources metric should exist");
+        assert_eq!(resources.get(), 60.0);
+    }
+
+    #[test]
+    fn test_cascading_failure_risk_boundary_70() {
+        AlertMetrics::update_cascading_failure_risk("zksync_mainnet_1", 75.0, 75.0, 50.0);
+
+        let overall = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["zksync_mainnet_1", "overall"])
+            .expect("Overall metric should exist");
+
+        // 75*0.4 + 75*0.4 + 50*0.2 = 30 + 30 + 10 = 70
+        assert_eq!(
+            overall.get(),
+            70.0,
+            "Boundary at 70.0 should calculate correctly"
+        );
+    }
+
+    #[test]
+    fn test_cascading_failure_risk_above_threshold() {
+        AlertMetrics::update_cascading_failure_risk("scroll_mainnet_1", 85.0, 80.0, 75.0);
+
+        let overall = CASCADING_FAILURE_RISK
+            .get_metric_with_label_values(&["scroll_mainnet_1", "overall"])
+            .expect("Overall metric should exist");
+
+        // 85*0.4 + 80*0.4 + 75*0.2 = 34 + 32 + 15 = 81
+        assert_eq!(
+            overall.get(),
+            81.0,
+            "Risk above 70 should trigger error log"
+        );
+    }
+
+    #[test]
+    fn test_record_emergency_shutdown() {
+        AlertMetrics::record_emergency_shutdown("price_updater_1", "memory_exhaustion");
+
+        let metric = EMERGENCY_SHUTDOWN_TRIGGERED
+            .get_metric_with_label_values(&["price_updater_1", "memory_exhaustion"])
+            .expect("Metric should exist");
+        assert!(metric.get() >= 1.0, "Counter should be incremented");
+    }
+
+    #[test]
+    fn test_degraded_mode_enabled() {
+        AlertMetrics::update_degraded_mode("tx_submitter_1", true, "rate_limited");
+
+        let metric = DEGRADED_MODE_ACTIVE
+            .get_metric_with_label_values(&["tx_submitter_1", "rate_limited"])
+            .expect("Metric should exist");
+        assert_eq!(
+            metric.get(),
+            1.0,
+            "Degraded mode should be 1.0 when enabled"
+        );
+    }
+
+    #[test]
+    fn test_degraded_mode_disabled() {
+        AlertMetrics::update_degraded_mode("tx_submitter_2", false, "normal");
+
+        let metric = DEGRADED_MODE_ACTIVE
+            .get_metric_with_label_values(&["tx_submitter_2", "normal"])
+            .expect("Metric should exist");
+        assert_eq!(
+            metric.get(),
+            0.0,
+            "Degraded mode should be 0.0 when disabled"
+        );
+    }
+
+    #[test]
+    fn test_record_sla_violation() {
+        AlertMetrics::record_sla_violation(
+            "matic_usd_feed_1",
+            "polygon_mainnet_2",
+            "latency",
+            150.0,
+            100.0,
+        );
+
+        let metric = SLA_VIOLATION
+            .get_metric_with_label_values(&["matic_usd_feed_1", "polygon_mainnet_2", "latency"])
+            .expect("Metric should exist");
+        assert!(metric.get() >= 1.0, "Counter should be incremented");
+    }
+
+    #[test]
+    fn test_alert_queue_normal() {
+        AlertMetrics::update_alert_queue(5, 10, 20, 30, "pagerduty_1");
+
+        let critical = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["critical", "pagerduty_1"])
+            .expect("Critical metric should exist");
+        assert_eq!(critical.get(), 5.0);
+
+        let high = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["high", "pagerduty_1"])
+            .expect("High metric should exist");
+        assert_eq!(high.get(), 10.0);
+
+        let medium = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["medium", "pagerduty_1"])
+            .expect("Medium metric should exist");
+        assert_eq!(medium.get(), 20.0);
+
+        let low = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["low", "pagerduty_1"])
+            .expect("Low metric should exist");
+        assert_eq!(low.get(), 30.0);
+    }
+
+    #[test]
+    fn test_alert_queue_large() {
+        AlertMetrics::update_alert_queue(30, 40, 50, 60, "slack_channel_1");
+
+        let critical = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["critical", "slack_channel_1"])
+            .expect("Critical metric should exist");
+        assert_eq!(critical.get(), 30.0);
+
+        let high = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["high", "slack_channel_1"])
+            .expect("High metric should exist");
+        assert_eq!(high.get(), 40.0);
+
+        let medium = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["medium", "slack_channel_1"])
+            .expect("Medium metric should exist");
+        assert_eq!(medium.get(), 50.0);
+
+        let low = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["low", "slack_channel_1"])
+            .expect("Low metric should exist");
+        assert_eq!(low.get(), 60.0);
+
+        // Total is 180, which should trigger warning
+    }
+
+    #[test]
+    fn test_alert_queue_boundary_100() {
+        AlertMetrics::update_alert_queue(25, 25, 25, 25, "email_destination_1");
+
+        let critical = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["critical", "email_destination_1"])
+            .expect("Critical metric should exist");
+        assert_eq!(critical.get(), 25.0);
+
+        // Total is exactly 100, should not trigger warning
+    }
+
+    #[test]
+    fn test_alert_queue_boundary_101() {
+        AlertMetrics::update_alert_queue(26, 25, 25, 25, "webhook_destination_1");
+
+        let critical = ALERT_QUEUE_DEPTH
+            .get_metric_with_label_values(&["critical", "webhook_destination_1"])
+            .expect("Critical metric should exist");
+        assert_eq!(critical.get(), 26.0);
+
+        // Total is 101, should trigger warning
+    }
+}
