@@ -156,3 +156,249 @@ impl PriceProvider for CoinGeckoProvider {
         "coingecko"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gas_price::models::{CoinGeckoConfig, PriceProvider};
+    use mockito;
+
+    fn create_provider(base_url: &str, api_key: Option<String>) -> CoinGeckoProvider {
+        CoinGeckoProvider::new(CoinGeckoConfig {
+            base_url: base_url.to_string(),
+            api_key,
+        })
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/simple/price?ids=ethereum&vs_currencies=usd")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"ethereum":{"usd":2500.50}}"#)
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), None);
+        let result = provider
+            .fetch_prices(&["ethereum".to_string()])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].token_id, "ethereum");
+        assert_eq!(result[0].symbol, "ETH");
+        assert!((result[0].price_usd - 2500.50).abs() < f64::EPSILON);
+        assert_eq!(result[0].source, "coingecko");
+        assert!(result[0].timestamp > 0);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_multiple_tokens() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock(
+                "GET",
+                mockito::Matcher::AllOf(vec![mockito::Matcher::UrlEncoded(
+                    "vs_currencies".into(),
+                    "usd".into(),
+                )]),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"ethereum":{"usd":2500.0},"binancecoin":{"usd":300.0}}"#)
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), None);
+        let result = provider
+            .fetch_prices(&["ethereum".to_string(), "binancecoin".to_string()])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 2);
+
+        let eth = result.iter().find(|p| p.token_id == "ethereum").unwrap();
+        assert_eq!(eth.symbol, "ETH");
+        assert!((eth.price_usd - 2500.0).abs() < f64::EPSILON);
+
+        let bnb = result.iter().find(|p| p.token_id == "binancecoin").unwrap();
+        assert_eq!(bnb.symbol, "BNB");
+        assert!((bnb.price_usd - 300.0).abs() < f64::EPSILON);
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_empty_tokens() {
+        let server = mockito::Server::new_async().await;
+        let provider = create_provider(&server.url(), None);
+
+        let result = provider.fetch_prices(&[]).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_rate_limited() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(429)
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), None);
+        let result = provider.fetch_prices(&["ethereum".to_string()]).await;
+
+        assert!(matches!(result, Err(PriceFetchError::RateLimitExceeded)));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_invalid_api_key() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(401)
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), Some("bad-key".to_string()));
+        let result = provider.fetch_prices(&["ethereum".to_string()]).await;
+
+        assert!(matches!(result, Err(PriceFetchError::InvalidApiKey)));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_server_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(500)
+            .with_body("Internal Server Error")
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), None);
+        let result = provider.fetch_prices(&["ethereum".to_string()]).await;
+
+        match result {
+            Err(PriceFetchError::ProviderError(msg)) => {
+                assert!(msg.contains("500"));
+            }
+            other => panic!("Expected ProviderError, got {:?}", other),
+        }
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_malformed_json() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("not valid json {{{")
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), None);
+        let result = provider.fetch_prices(&["ethereum".to_string()]).await;
+
+        assert!(matches!(result, Err(PriceFetchError::ParseError(_))));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_missing_token() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"ethereum":{"usd":2500.0}}"#)
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), None);
+        let result = provider
+            .fetch_prices(&["ethereum".to_string(), "unknown-token".to_string()])
+            .await
+            .unwrap();
+
+        // Only ethereum should be in results, unknown-token is silently skipped
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].token_id, "ethereum");
+
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_prices_with_api_key() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .match_header("x-cg-pro-api-key", "my-secret-key")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"ethereum":{"usd":2500.0}}"#)
+            .create_async()
+            .await;
+
+        let provider = create_provider(&server.url(), Some("my-secret-key".to_string()));
+        let result = provider
+            .fetch_prices(&["ethereum".to_string()])
+            .await
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        mock.assert_async().await;
+    }
+
+    #[test]
+    fn test_build_url() {
+        let provider = CoinGeckoProvider::new(CoinGeckoConfig {
+            base_url: "https://api.coingecko.com/api/v3".to_string(),
+            api_key: None,
+        });
+
+        let url = provider.build_url(&["ethereum".to_string()]);
+        assert_eq!(
+            url,
+            "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+        );
+
+        let url = provider.build_url(&["ethereum".to_string(), "binancecoin".to_string()]);
+        assert_eq!(
+            url,
+            "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,binancecoin&vs_currencies=usd"
+        );
+    }
+
+    #[test]
+    fn test_get_default_symbol() {
+        assert_eq!(CoinGeckoProvider::get_default_symbol("ethereum"), "ETH");
+        assert_eq!(CoinGeckoProvider::get_default_symbol("binancecoin"), "BNB");
+        assert_eq!(
+            CoinGeckoProvider::get_default_symbol("matic-network"),
+            "MATIC"
+        );
+        assert_eq!(CoinGeckoProvider::get_default_symbol("avalanche-2"), "AVAX");
+        assert_eq!(CoinGeckoProvider::get_default_symbol("fantom"), "FTM");
+        assert_eq!(
+            CoinGeckoProvider::get_default_symbol("some-unknown-token"),
+            "UNKNOWN"
+        );
+    }
+
+    #[test]
+    fn test_name() {
+        let provider = CoinGeckoProvider::new(CoinGeckoConfig::default());
+        assert_eq!(provider.name(), "coingecko");
+    }
+}

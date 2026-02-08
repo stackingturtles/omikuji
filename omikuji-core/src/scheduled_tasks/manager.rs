@@ -244,7 +244,9 @@ async fn execute_task(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::models::{Network, NetworkNode};
     use crate::scheduled_tasks::models::{CheckCondition, GasConfig, Parameter, TargetFunction};
+    use alloy::node_bindings::Anvil;
 
     fn create_test_task(name: &str) -> ScheduledTask {
         ScheduledTask {
@@ -395,5 +397,120 @@ mod tests {
             }
             _ => panic!("Expected Property condition"),
         }
+    }
+
+    // ----- Phase 2: Anvil-based ScheduledTaskManager tests -----
+
+    /// Create a NetworkManager backed by an Anvil instance.
+    async fn create_anvil_network_manager(
+    ) -> (alloy::node_bindings::AnvilInstance, Arc<NetworkProviders>) {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url = anvil.endpoint();
+        let network = Network {
+            name: "test-network".to_string(),
+            nodes: vec![NetworkNode {
+                name: "Anvil Node".to_string(),
+                rpc_url: url,
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        };
+        let nm = NetworkProviders::new(&[network]).await.unwrap();
+        (anvil, Arc::new(nm))
+    }
+
+    #[tokio::test]
+    async fn test_manager_creation_with_anvil() {
+        let (_anvil, nm) = create_anvil_network_manager().await;
+        let tasks = vec![create_test_task("task1"), create_test_task("task2")];
+
+        let manager = ScheduledTaskManager::new(tasks, nm).await.unwrap();
+
+        let status = manager.get_task_status().await;
+        assert_eq!(status.len(), 2);
+        assert!(status.contains_key("task1"));
+        assert!(status.contains_key("task2"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_builder_gas_price_manager() {
+        let (_anvil, nm) = create_anvil_network_manager().await;
+        let tasks = vec![create_test_task("task1")];
+
+        let manager = ScheduledTaskManager::new(tasks, nm).await.unwrap();
+
+        // Build a minimal GasPriceManager
+        let gpm = Arc::new(crate::gas_price::GasPriceManager::new(
+            Default::default(),
+            std::collections::HashMap::new(),
+            None,
+        ));
+
+        let manager = manager.with_gas_price_manager(gpm.clone());
+        assert!(manager.gas_price_manager.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_manager_builder_tx_log_repo() {
+        let (_anvil, nm) = create_anvil_network_manager().await;
+        let tasks = vec![create_test_task("task1")];
+
+        let manager = ScheduledTaskManager::new(tasks, nm).await.unwrap();
+
+        // We can't construct a real TransactionLogRepository without a DB pool,
+        // but we can verify the builder method typechecks and stores correctly.
+        // This test just verifies tx_log_repo is None initially.
+        assert!(manager.tx_log_repo.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_task_status_returns_all_tasks() {
+        let (_anvil, nm) = create_anvil_network_manager().await;
+        let tasks = vec![
+            create_test_task("alpha"),
+            create_test_task("beta"),
+            create_test_task_with_condition("gamma"),
+        ];
+
+        let manager = ScheduledTaskManager::new(tasks, nm).await.unwrap();
+        let status = manager.get_task_status().await;
+
+        assert_eq!(status.len(), 3);
+        assert_eq!(status["alpha"].schedule, "0 0 * * * *");
+        assert_eq!(status["beta"].network, "test-network");
+        assert_eq!(status["gamma"].schedule, "*/5 * * * * *");
+    }
+
+    #[tokio::test]
+    async fn test_start_and_stop_lifecycle() {
+        let (_anvil, nm) = create_anvil_network_manager().await;
+        let tasks = vec![create_test_task("lifecycle_task")];
+
+        let manager = ScheduledTaskManager::new(tasks, nm).await.unwrap();
+
+        // start() schedules jobs on the cron scheduler
+        manager.start().await.unwrap();
+
+        // stop() should complete without error
+        manager.stop().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_stop_drains_handles() {
+        let (_anvil, nm) = create_anvil_network_manager().await;
+        let tasks = vec![create_test_task("handle_task")];
+
+        let manager = ScheduledTaskManager::new(tasks, nm).await.unwrap();
+        manager.start().await.unwrap();
+        manager.stop().await.unwrap();
+
+        let handles = manager.handles.read().await;
+        assert!(handles.is_empty());
     }
 }

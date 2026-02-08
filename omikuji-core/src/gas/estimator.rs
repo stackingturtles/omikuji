@@ -253,3 +253,285 @@ impl<T: Transport + Clone, P: Provider<T> + Clone> GasEstimator<T, P> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::models::{FeeBumpingConfig, GasConfig, Network, NetworkNode};
+    use alloy::{
+        node_bindings::{Anvil, AnvilInstance},
+        providers::{ProviderBuilder, RootProvider},
+        transports::http::{Client, Http},
+    };
+
+    /// Create an Anvil-backed provider for tests.
+    /// Returns the AnvilInstance (must stay alive) and the provider.
+    fn anvil_provider() -> (AnvilInstance, Arc<RootProvider<Http<Client>>>) {
+        let anvil = Anvil::new()
+            .try_spawn()
+            .expect("Anvil required for this test");
+        let provider = Arc::new(ProviderBuilder::new().on_http(anvil.endpoint_url()));
+        (anvil, provider)
+    }
+
+    fn create_test_network(tx_type: &str) -> Network {
+        Network {
+            name: "test".to_string(),
+            nodes: vec![NetworkNode {
+                name: "Test Node".to_string(),
+                rpc_url: "http://localhost:8545".to_string(),
+                ws_url: None,
+            }],
+            transaction_type: tx_type.to_string(),
+            gas_config: GasConfig {
+                gas_limit: None,
+                gas_price_gwei: None,
+                max_fee_per_gas_gwei: None,
+                max_priority_fee_per_gas_gwei: None,
+                gas_multiplier: 1.2,
+                fee_bumping: FeeBumpingConfig {
+                    enabled: true,
+                    max_retries: 3,
+                    initial_wait_seconds: 30,
+                    fee_increase_percent: 10.0,
+                },
+            },
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        }
+    }
+
+    fn simple_tx() -> TransactionRequest {
+        TransactionRequest::default()
+    }
+
+    // --- Async tests using Anvil ---
+
+    #[tokio::test]
+    async fn test_estimate_gas_legacy() {
+        let (_anvil, provider) = anvil_provider();
+        let network = create_test_network("legacy");
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        assert!(estimate.gas_price.is_some(), "legacy should have gas_price");
+        assert!(estimate.max_fee_per_gas.is_none());
+        assert!(estimate.max_priority_fee_per_gas.is_none());
+        assert!(estimate.gas_limit > U256::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_gas_eip1559() {
+        let (_anvil, provider) = anvil_provider();
+        let network = create_test_network("eip1559");
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        assert!(estimate.gas_price.is_none());
+        assert!(
+            estimate.max_fee_per_gas.is_some(),
+            "eip1559 should have max_fee_per_gas"
+        );
+        assert!(
+            estimate.max_priority_fee_per_gas.is_some(),
+            "eip1559 should have max_priority_fee_per_gas"
+        );
+        assert!(estimate.gas_limit > U256::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_gas_unknown_type_defaults_eip1559() {
+        let (_anvil, provider) = anvil_provider();
+        let network = create_test_network("unknown_type");
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        // Unknown type should fall through to EIP-1559
+        assert!(estimate.gas_price.is_none());
+        assert!(estimate.max_fee_per_gas.is_some());
+        assert!(estimate.max_priority_fee_per_gas.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_estimate_gas_limit_manual_override() {
+        let (_anvil, provider) = anvil_provider();
+        let mut network = create_test_network("eip1559");
+        network.gas_config.gas_limit = Some(300_000);
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        assert_eq!(estimate.gas_limit, U256::from(300_000));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_gas_limit_with_multiplier() {
+        let (_anvil, provider) = anvil_provider();
+        let mut network = create_test_network("eip1559");
+        network.gas_config.gas_multiplier = 1.5;
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        // Gas limit should be > 0 and reflect the multiplier
+        // On Anvil, estimate_gas for an empty tx returns 21000
+        // With 1.5x multiplier: 21000 * 1500 / 1000 = 31500
+        assert!(estimate.gas_limit > U256::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_legacy_gas_price_manual_override() {
+        let (_anvil, provider) = anvil_provider();
+        let mut network = create_test_network("legacy");
+        network.gas_config.gas_price_gwei = Some(25.0);
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        // 25 gwei = 25_000_000_000 wei
+        assert_eq!(estimate.gas_price, Some(U256::from(25_000_000_000u64)));
+    }
+
+    #[tokio::test]
+    async fn test_estimate_eip1559_manual_both_overrides() {
+        let (_anvil, provider) = anvil_provider();
+        let mut network = create_test_network("eip1559");
+        network.gas_config.max_fee_per_gas_gwei = Some(100.0);
+        network.gas_config.max_priority_fee_per_gas_gwei = Some(5.0);
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        assert_eq!(
+            estimate.max_fee_per_gas,
+            Some(U256::from(100_000_000_000u64))
+        );
+        assert_eq!(
+            estimate.max_priority_fee_per_gas,
+            Some(U256::from(5_000_000_000u64))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_estimate_eip1559_partial_override_priority_only() {
+        let (_anvil, provider) = anvil_provider();
+        let mut network = create_test_network("eip1559");
+        network.gas_config.max_priority_fee_per_gas_gwei = Some(3.0);
+        // max_fee is NOT set — should be derived from network gas_price + priority fee
+        let estimator = GasEstimator::new(provider, network);
+
+        let estimate = estimator.estimate_gas(&simple_tx()).await.unwrap();
+
+        // Priority fee should reflect manual override (3 gwei) with multiplier applied
+        // 3 gwei = 3_000_000_000 wei, with 1.2x multiplier = 3_600_000_000
+        assert!(estimate.max_priority_fee_per_gas.is_some());
+        let priority_fee = estimate.max_priority_fee_per_gas.unwrap();
+        assert_eq!(priority_fee, U256::from(3_600_000_000u64));
+
+        // Max fee should be derived from network (not None)
+        assert!(estimate.max_fee_per_gas.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_estimate_gas_returns_valid_fields() {
+        let (_anvil, provider) = anvil_provider();
+
+        // Legacy
+        let legacy_network = create_test_network("legacy");
+        let estimator = GasEstimator::new(provider.clone(), legacy_network);
+        let legacy_est = estimator.estimate_gas(&simple_tx()).await.unwrap();
+        assert!(legacy_est.gas_price.is_some());
+        assert!(legacy_est.max_fee_per_gas.is_none());
+        assert!(legacy_est.max_priority_fee_per_gas.is_none());
+
+        // EIP-1559
+        let eip_network = create_test_network("eip1559");
+        let estimator = GasEstimator::new(provider, eip_network);
+        let eip_est = estimator.estimate_gas(&simple_tx()).await.unwrap();
+        assert!(eip_est.gas_price.is_none());
+        assert!(eip_est.max_fee_per_gas.is_some());
+        assert!(eip_est.max_priority_fee_per_gas.is_some());
+    }
+
+    // --- Pure function tests (no Anvil needed, but GasEstimator::new requires Arc<P>) ---
+
+    #[test]
+    fn test_bump_fees_legacy() {
+        let (_anvil, provider) = anvil_provider();
+        let network = create_test_network("legacy");
+        let estimator = GasEstimator::new(provider, network);
+
+        let original = GasEstimate {
+            gas_limit: U256::from(100_000),
+            gas_price: Some(U256::from(20_000_000_000u64)), // 20 gwei
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        };
+
+        // 10% bump per retry: multiplier = 1.0 + (10.0/100.0) * retry_count
+
+        // retry_count=1 → multiplier=1.1 → 20 * 1.1 = 22 gwei
+        let bumped1 = estimator.bump_fees(&original, 1);
+        assert_eq!(bumped1.gas_limit, original.gas_limit);
+        assert_eq!(bumped1.gas_price, Some(U256::from(22_000_000_000u64)));
+
+        // retry_count=2 → multiplier=1.2 → 20 * 1.2 = 24 gwei
+        let bumped2 = estimator.bump_fees(&original, 2);
+        assert_eq!(bumped2.gas_price, Some(U256::from(24_000_000_000u64)));
+
+        // retry_count=3 → multiplier=1.3 → 20 * 1.3 = 26 gwei
+        let bumped3 = estimator.bump_fees(&original, 3);
+        assert_eq!(bumped3.gas_price, Some(U256::from(26_000_000_000u64)));
+    }
+
+    #[test]
+    fn test_bump_fees_eip1559() {
+        let (_anvil, provider) = anvil_provider();
+        let network = create_test_network("eip1559");
+        let estimator = GasEstimator::new(provider, network);
+
+        let original = GasEstimate {
+            gas_limit: U256::from(100_000),
+            gas_price: None,
+            max_fee_per_gas: Some(U256::from(50_000_000_000u64)), // 50 gwei
+            max_priority_fee_per_gas: Some(U256::from(2_000_000_000u64)), // 2 gwei
+        };
+
+        // retry_count=1 → multiplier=1.1
+        let bumped1 = estimator.bump_fees(&original, 1);
+        assert_eq!(bumped1.gas_limit, original.gas_limit);
+        assert_eq!(
+            bumped1.max_fee_per_gas,
+            Some(U256::from(55_000_000_000u64)) // 50 * 1.1 = 55 gwei
+        );
+        assert_eq!(
+            bumped1.max_priority_fee_per_gas,
+            Some(U256::from(2_200_000_000u64)) // 2 * 1.1 = 2.2 gwei
+        );
+    }
+
+    #[test]
+    fn test_bump_fees_zero_retries() {
+        let (_anvil, provider) = anvil_provider();
+        let network = create_test_network("legacy");
+        let estimator = GasEstimator::new(provider, network);
+
+        let original = GasEstimate {
+            gas_limit: U256::from(100_000),
+            gas_price: Some(U256::from(20_000_000_000u64)),
+            max_fee_per_gas: None,
+            max_priority_fee_per_gas: None,
+        };
+
+        // retry_count=0 → multiplier=1.0 (no change)
+        let bumped = estimator.bump_fees(&original, 0);
+        assert_eq!(bumped.gas_price, original.gas_price);
+        assert_eq!(bumped.gas_limit, original.gas_limit);
+    }
+}

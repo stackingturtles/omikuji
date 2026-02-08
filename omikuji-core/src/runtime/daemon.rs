@@ -394,6 +394,119 @@ impl Daemon {
 
 #[cfg(test)]
 mod tests {
-    // Note: Full daemon testing requires valid configuration
-    // Integration tests should be in the main binary
+    use super::*;
+    use crate::config::models::{Network, NetworkNode, OmikujiConfig};
+    use crate::network::NetworkManager;
+    use crate::runtime::ShutdownHandle;
+    use crate::transaction::queue::TransactionQueue;
+    use alloy::node_bindings::Anvil;
+
+    /// Create a minimal StartupContext backed by Anvil, suitable for daemon tests.
+    async fn create_test_startup_context() -> (
+        alloy::node_bindings::AnvilInstance,
+        super::super::StartupContext,
+    ) {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url = anvil.endpoint();
+
+        let network = Network {
+            name: "anvil".to_string(),
+            nodes: vec![NetworkNode {
+                name: "Anvil Node".to_string(),
+                rpc_url: url,
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        };
+
+        let config = OmikujiConfig {
+            networks: vec![network],
+            datafeeds: vec![],
+            database_cleanup: Default::default(),
+            key_storage: Default::default(),
+            metrics: Default::default(),
+            gas_price_feeds: Default::default(),
+            scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
+        };
+
+        let nm = Arc::new(NetworkManager::new(&config.networks).await.unwrap());
+        let tx_queue = Arc::new(TransactionQueue::new(
+            config.clone(),
+            nm.clone(),
+            None,
+            None,
+        ));
+
+        let ctx = super::super::StartupContext {
+            config,
+            database_pool: None,
+            cleanup_manager: None,
+            network_manager: nm,
+            gas_price_manager: None,
+            transaction_queue: tx_queue,
+            private_key_env: "TEST_KEY".to_string(),
+        };
+
+        (anvil, ctx)
+    }
+
+    #[tokio::test]
+    async fn test_daemon_creation() {
+        let (_anvil, ctx) = create_test_startup_context().await;
+        let shutdown = ShutdownHandle::new();
+
+        let daemon = Daemon::new(ctx, shutdown);
+        assert!(daemon.config.scheduled_tasks.is_empty());
+        assert!(daemon.config.event_monitors.is_empty());
+        assert_eq!(daemon.config.networks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_daemon_run_immediate_shutdown() {
+        let (_anvil, ctx) = create_test_startup_context().await;
+        let shutdown = ShutdownHandle::new();
+
+        // Pre-trigger shutdown so run() returns immediately
+        shutdown.trigger_shutdown();
+
+        let daemon = Daemon::new(ctx, shutdown);
+        let result = daemon.run().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_daemon_run_no_scheduled_tasks() {
+        let (_anvil, ctx) = create_test_startup_context().await;
+        assert!(ctx.config.scheduled_tasks.is_empty());
+
+        let shutdown = ShutdownHandle::new();
+        shutdown.trigger_shutdown();
+
+        let daemon = Daemon::new(ctx, shutdown);
+        // With no tasks, start_scheduled_tasks returns Ok(None)
+        let result = daemon.run().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_daemon_run_no_event_monitors() {
+        let (_anvil, ctx) = create_test_startup_context().await;
+        assert!(ctx.config.event_monitors.is_empty());
+
+        let shutdown = ShutdownHandle::new();
+        shutdown.trigger_shutdown();
+
+        let daemon = Daemon::new(ctx, shutdown);
+        // With no monitors, start_event_monitoring returns None
+        let result = daemon.run().await;
+        assert!(result.is_ok());
+    }
 }

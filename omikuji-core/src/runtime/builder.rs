@@ -158,6 +158,9 @@ impl Default for DaemonBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::node_bindings::Anvil;
+    use std::io::Write;
+    use tempfile::TempDir;
 
     #[test]
     fn test_builder_creation() {
@@ -177,5 +180,56 @@ mod tests {
 
         assert_eq!(builder.private_key_env, "TEST_KEY");
         assert_eq!(builder.config_path, Some(PathBuf::from("test_config.yaml")));
+    }
+
+    #[tokio::test]
+    async fn test_build_with_invalid_config_path() {
+        let result = DaemonBuilder::new()
+            .config_path(PathBuf::from("/tmp/nonexistent_omikuji_test_config.yaml"))
+            .build()
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_build_with_valid_config() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url = anvil.endpoint();
+
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        let yaml = format!(
+            r#"
+networks:
+  - name: anvil
+    transaction_type: eip1559
+    nodes:
+      - name: Test Anvil
+        rpc_url: {url}
+
+datafeeds: []
+scheduled_tasks: []
+event_monitors: []
+
+key_storage:
+  storage_type: env
+"#
+        );
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(yaml.as_bytes()).unwrap();
+
+        // Ensure DATABASE_URL is not set so DB init is skipped
+        std::env::remove_var("DATABASE_URL");
+
+        // Verify StartupContext::new succeeds with this config
+        // (We avoid full build() which calls initialize_components → init_metrics_config
+        // that uses a global OnceCell and panics if already initialized by another test)
+        let ctx = super::super::StartupContext::new(&path, "TEST_KEY".to_string()).await;
+        assert!(ctx.is_ok());
+
+        let ctx = ctx.unwrap();
+        assert_eq!(ctx.config.networks.len(), 1);
+        assert_eq!(ctx.config.networks[0].name, "anvil");
     }
 }

@@ -320,6 +320,263 @@ mod tests {
     use alloy::primitives::U256;
     use serde_json::json;
 
+    // --- Anvil-based async test infrastructure ---
+
+    use alloy::node_bindings::Anvil;
+    use alloy::providers::{ProviderBuilder, RootProvider};
+    use alloy::transports::http::{Client, Http};
+
+    /// Spawn Anvil and return the instance + a provider connected to it.
+    fn anvil_provider() -> (
+        alloy::node_bindings::AnvilInstance,
+        Arc<RootProvider<Http<Client>>>,
+    ) {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url: url::Url = anvil.endpoint().parse().unwrap();
+        let provider = ProviderBuilder::new().on_http(url);
+        (anvil, Arc::new(provider))
+    }
+
+    /// Use `anvil_setCode` to place minimal bytecode at `address` that always
+    /// returns the given 32-byte `return_value` for any call.
+    ///
+    /// Bytecode layout (45 bytes):
+    ///   PUSH32 <return_value>   // 33 bytes: 0x7f + 32 bytes
+    ///   PUSH1 0x00              // 2 bytes: 0x60 0x00
+    ///   MSTORE                  // 1 byte:  0x52
+    ///   PUSH1 0x20              // 2 bytes: 0x60 0x20
+    ///   PUSH1 0x00              // 2 bytes: 0x60 0x00
+    ///   RETURN                  // 1 byte:  0xf3
+    async fn set_return_bytecode(
+        provider: &Arc<RootProvider<Http<Client>>>,
+        address: Address,
+        return_value: [u8; 32],
+    ) {
+        let mut bytecode = Vec::with_capacity(41);
+        bytecode.push(0x7f); // PUSH32
+        bytecode.extend_from_slice(&return_value);
+        bytecode.push(0x60); // PUSH1
+        bytecode.push(0x00); // 0
+        bytecode.push(0x52); // MSTORE
+        bytecode.push(0x60); // PUSH1
+        bytecode.push(0x20); // 32
+        bytecode.push(0x60); // PUSH1
+        bytecode.push(0x00); // 0
+        bytecode.push(0xf3); // RETURN
+
+        let bytecode_hex = format!("0x{}", hex::encode(&bytecode));
+
+        // anvil_setCode(address, bytecode)
+        let _: () = provider
+            .raw_request(
+                "anvil_setCode".into(),
+                &[
+                    serde_json::to_value(address).unwrap(),
+                    serde_json::Value::String(bytecode_hex),
+                ],
+            )
+            .await
+            .expect("anvil_setCode failed");
+    }
+
+    // ----- Phase 1: Anvil-based ConditionChecker tests -----
+
+    #[tokio::test]
+    async fn test_check_property_returns_true() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x1111111111111111111111111111111111111111"
+            .parse()
+            .unwrap();
+
+        // Bytecode that returns true (last byte = 1)
+        let mut val = [0u8; 32];
+        val[31] = 1; // true
+        set_return_bytecode(&provider, address, val).await;
+
+        let result = ConditionChecker::check_condition(
+            provider,
+            &CheckCondition::Property {
+                contract_address: format!("{address}"),
+                property: "isPaused".to_string(),
+                expected_value: json!(true),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_check_property_mismatch() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x2222222222222222222222222222222222222222"
+            .parse()
+            .unwrap();
+
+        // Bytecode returns true, but we expect false → mismatch
+        let mut val = [0u8; 32];
+        val[31] = 1;
+        set_return_bytecode(&provider, address, val).await;
+
+        let result = ConditionChecker::check_condition(
+            provider,
+            &CheckCondition::Property {
+                contract_address: format!("{address}"),
+                property: "isActive".to_string(),
+                expected_value: json!(false),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_check_property_invalid_address() {
+        let (_anvil, provider) = anvil_provider();
+
+        let result = ConditionChecker::check_condition(
+            provider,
+            &CheckCondition::Property {
+                contract_address: "0xINVALID".to_string(),
+                property: "isPaused".to_string(),
+                expected_value: json!(true),
+            },
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_check_function_bool_match() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x3333333333333333333333333333333333333333"
+            .parse()
+            .unwrap();
+
+        // Return true
+        let mut val = [0u8; 32];
+        val[31] = 1;
+        set_return_bytecode(&provider, address, val).await;
+
+        let result = ConditionChecker::check_condition(
+            provider,
+            &CheckCondition::Function {
+                contract_address: format!("{address}"),
+                function: "isReady()".to_string(),
+                expected_value: json!(true),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_check_function_uint256_match() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x4444444444444444444444444444444444444444"
+            .parse()
+            .unwrap();
+
+        // Return 42 (0x2a)
+        let mut val = [0u8; 32];
+        val[31] = 42;
+        set_return_bytecode(&provider, address, val).await;
+
+        let result = ConditionChecker::check_condition(
+            provider,
+            &CheckCondition::Function {
+                contract_address: format!("{address}"),
+                function: "getValue() (uint256)".to_string(),
+                expected_value: json!("42"),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_check_function_uint256_mismatch() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x5555555555555555555555555555555555555555"
+            .parse()
+            .unwrap();
+
+        // Return 42 but expect 100
+        let mut val = [0u8; 32];
+        val[31] = 42;
+        set_return_bytecode(&provider, address, val).await;
+
+        let result = ConditionChecker::check_condition(
+            provider,
+            &CheckCondition::Function {
+                contract_address: format!("{address}"),
+                function: "getValue() (uint256)".to_string(),
+                expected_value: json!("100"),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_check_condition_property_dispatch() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x6666666666666666666666666666666666666666"
+            .parse()
+            .unwrap();
+
+        // Return false
+        let val = [0u8; 32];
+        set_return_bytecode(&provider, address, val).await;
+
+        let condition = CheckCondition::Property {
+            contract_address: format!("{address}"),
+            property: "isPaused".to_string(),
+            expected_value: json!(false),
+        };
+
+        let result = ConditionChecker::check_condition(provider, &condition)
+            .await
+            .unwrap();
+
+        assert!(result); // false == false → true
+    }
+
+    #[tokio::test]
+    async fn test_check_condition_function_dispatch() {
+        let (_anvil, provider) = anvil_provider();
+        let address: Address = "0x7777777777777777777777777777777777777777"
+            .parse()
+            .unwrap();
+
+        // Return true
+        let mut val = [0u8; 32];
+        val[31] = 1;
+        set_return_bytecode(&provider, address, val).await;
+
+        let condition = CheckCondition::Function {
+            contract_address: format!("{address}"),
+            function: "canExecute()".to_string(),
+            expected_value: json!(true),
+        };
+
+        let result = ConditionChecker::check_condition(provider, &condition)
+            .await
+            .unwrap();
+
+        assert!(result);
+    }
+
     #[test]
     fn test_parse_function_signature() {
         // Test simple function without return type

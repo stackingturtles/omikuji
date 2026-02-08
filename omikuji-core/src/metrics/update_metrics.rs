@@ -274,3 +274,497 @@ impl UpdateMetrics {
             .inc();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_record_update_decision_deviation_threshold() {
+        UpdateMetrics::record_update_decision(
+            "feed_dev_threshold",
+            "network_dev",
+            true,
+            Some(UpdateReason::DeviationThreshold),
+            None,
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_dev_threshold",
+            "network_dev",
+            "update",
+            "deviation_threshold",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_time_threshold() {
+        UpdateMetrics::record_update_decision(
+            "feed_time_threshold",
+            "network_time",
+            true,
+            Some(UpdateReason::TimeThreshold),
+            None,
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_time_threshold",
+            "network_time",
+            "update",
+            "time_threshold",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_both_thresholds() {
+        UpdateMetrics::record_update_decision(
+            "feed_both",
+            "network_both",
+            true,
+            Some(UpdateReason::Both),
+            None,
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_both",
+            "network_both",
+            "update",
+            "both_thresholds",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_force_update() {
+        UpdateMetrics::record_update_decision(
+            "feed_force",
+            "network_force",
+            true,
+            Some(UpdateReason::ForceUpdate),
+            None,
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_force",
+            "network_force",
+            "update",
+            "force_update",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_initial_update() {
+        UpdateMetrics::record_update_decision(
+            "feed_initial",
+            "network_initial",
+            true,
+            Some(UpdateReason::InitialUpdate),
+            None,
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_initial",
+            "network_initial",
+            "update",
+            "initial_update",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_skip_no_deviation() {
+        UpdateMetrics::record_update_decision(
+            "feed_skip_no_dev",
+            "network_skip_no_dev",
+            false,
+            None,
+            Some(SkipReason::NoDeviation),
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_skip_no_dev",
+            "network_skip_no_dev",
+            "skip",
+            "no_deviation",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_skip_too_soon() {
+        UpdateMetrics::record_update_decision(
+            "feed_skip_soon",
+            "network_skip_soon",
+            false,
+            None,
+            Some(SkipReason::TooSoon),
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_skip_soon",
+            "network_skip_soon",
+            "skip",
+            "too_soon",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_skip_no_change() {
+        UpdateMetrics::record_update_decision(
+            "feed_skip_no_chg",
+            "network_skip_no_chg",
+            false,
+            None,
+            Some(SkipReason::NoChange),
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_skip_no_chg",
+            "network_skip_no_chg",
+            "skip",
+            "no_change",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_skip_below_threshold() {
+        UpdateMetrics::record_update_decision(
+            "feed_skip_below",
+            "network_skip_below",
+            false,
+            None,
+            Some(SkipReason::BelowThreshold),
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_skip_below",
+            "network_skip_below",
+            "skip",
+            "below_threshold",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_decision_skip_error() {
+        UpdateMetrics::record_update_decision(
+            "feed_skip_err",
+            "network_skip_err",
+            false,
+            None,
+            Some(SkipReason::Error),
+        );
+
+        let counter = UPDATE_DECISION_COUNT.with_label_values(&[
+            "feed_skip_err",
+            "network_skip_err",
+            "skip",
+            "error",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_skip_counter_increments_on_skip() {
+        let feed = "feed_skip_inc";
+        let network = "network_skip_inc";
+
+        // Record a skip
+        UpdateMetrics::record_update_decision(
+            feed,
+            network,
+            false,
+            None,
+            Some(SkipReason::NoDeviation),
+        );
+
+        let gauge = CONSECUTIVE_SKIPPED_UPDATES.with_label_values(&[feed, network, "no_deviation"]);
+        let count1 = gauge.get();
+        assert!(count1 > 0.0);
+
+        // Record another skip
+        UpdateMetrics::record_update_decision(
+            feed,
+            network,
+            false,
+            None,
+            Some(SkipReason::NoDeviation),
+        );
+
+        let count2 = gauge.get();
+        assert!(count2 > count1);
+    }
+
+    #[test]
+    fn test_skip_counter_resets_on_update() {
+        let feed = "feed_reset_skip";
+        let network = "network_reset_skip";
+
+        // First skip to increment counter
+        UpdateMetrics::record_update_decision(
+            feed,
+            network,
+            false,
+            None,
+            Some(SkipReason::TooSoon),
+        );
+
+        let gauge = CONSECUTIVE_SKIPPED_UPDATES.with_label_values(&[feed, network, "too_soon"]);
+        assert!(gauge.get() > 0.0);
+
+        // Now perform an update
+        UpdateMetrics::record_update_decision(
+            feed,
+            network,
+            true,
+            Some(UpdateReason::DeviationThreshold),
+            None,
+        );
+
+        // All skip counters should be reset to 0
+        for skip in [
+            "no_deviation",
+            "too_soon",
+            "no_change",
+            "below_threshold",
+            "error",
+        ] {
+            let skip_gauge = CONSECUTIVE_SKIPPED_UPDATES.with_label_values(&[feed, network, skip]);
+            assert_eq!(skip_gauge.get(), 0.0);
+        }
+    }
+
+    #[test]
+    fn test_update_time_since_last() {
+        UpdateMetrics::update_time_since_last(
+            "feed_time_since",
+            "network_time_since",
+            123.45,
+            67.89,
+        );
+
+        let feed_gauge = TIME_SINCE_UPDATE_SECONDS.with_label_values(&[
+            "feed_time_since",
+            "network_time_since",
+            "feed",
+        ]);
+        assert_eq!(feed_gauge.get(), 123.45);
+
+        let contract_gauge = TIME_SINCE_UPDATE_SECONDS.with_label_values(&[
+            "feed_time_since",
+            "network_time_since",
+            "contract",
+        ]);
+        assert_eq!(contract_gauge.get(), 67.89);
+    }
+
+    #[test]
+    fn test_deviation_breach_normal() {
+        UpdateMetrics::record_deviation_breach("feed_dev_normal", "network_dev_normal", 1.5, 1.0);
+
+        let counter = DEVIATION_BREACH_COUNT.with_label_values(&[
+            "feed_dev_normal",
+            "network_dev_normal",
+            "normal",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_deviation_breach_high_boundary() {
+        // Exactly 2x threshold should be "high"
+        UpdateMetrics::record_deviation_breach("feed_dev_high", "network_dev_high", 2.0, 1.0);
+
+        let counter = DEVIATION_BREACH_COUNT.with_label_values(&[
+            "feed_dev_high",
+            "network_dev_high",
+            "high",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_deviation_breach_high() {
+        // > 2x but < 3x threshold should be "high"
+        UpdateMetrics::record_deviation_breach("feed_dev_high2", "network_dev_high2", 2.5, 1.0);
+
+        let counter = DEVIATION_BREACH_COUNT.with_label_values(&[
+            "feed_dev_high2",
+            "network_dev_high2",
+            "high",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_deviation_breach_critical_boundary() {
+        // Exactly 3x threshold should be "critical"
+        UpdateMetrics::record_deviation_breach("feed_dev_crit", "network_dev_crit", 3.0, 1.0);
+
+        let counter = DEVIATION_BREACH_COUNT.with_label_values(&[
+            "feed_dev_crit",
+            "network_dev_crit",
+            "critical",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_deviation_breach_critical() {
+        // > 3x threshold should be "critical"
+        UpdateMetrics::record_deviation_breach("feed_dev_crit2", "network_dev_crit2", 5.0, 1.0);
+
+        let counter = DEVIATION_BREACH_COUNT.with_label_values(&[
+            "feed_dev_crit2",
+            "network_dev_crit2",
+            "critical",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_frequency_violation_warning() {
+        // < 2x minimum should be "warning"
+        UpdateMetrics::record_frequency_violation(
+            "feed_freq_warn",
+            "network_freq_warn",
+            150.0,
+            100.0,
+        );
+
+        let counter = UPDATE_FREQUENCY_VIOLATION_COUNT.with_label_values(&[
+            "feed_freq_warn",
+            "network_freq_warn",
+            "warning",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_frequency_violation_critical_boundary() {
+        // Exactly 2x minimum should be "critical"
+        UpdateMetrics::record_frequency_violation(
+            "feed_freq_crit",
+            "network_freq_crit",
+            200.0,
+            100.0,
+        );
+
+        let counter = UPDATE_FREQUENCY_VIOLATION_COUNT.with_label_values(&[
+            "feed_freq_crit",
+            "network_freq_crit",
+            "critical",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_frequency_violation_critical() {
+        // > 2x minimum should be "critical"
+        UpdateMetrics::record_frequency_violation(
+            "feed_freq_crit2",
+            "network_freq_crit2",
+            300.0,
+            100.0,
+        );
+
+        let counter = UPDATE_FREQUENCY_VIOLATION_COUNT.with_label_values(&[
+            "feed_freq_crit2",
+            "network_freq_crit2",
+            "critical",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_check_interval() {
+        UpdateMetrics::record_check_interval("feed_check_int", "network_check_int", 42.5);
+
+        let histogram = UPDATE_CHECK_INTERVAL_SECONDS
+            .with_label_values(&["feed_check_int", "network_check_int"]);
+        assert!(histogram.get_sample_count() > 0);
+    }
+
+    #[test]
+    fn test_record_update_lag_valid() {
+        // update_timestamp > feed_timestamp should record lag
+        UpdateMetrics::record_update_lag("feed_lag_valid", "network_lag_valid", 1000, 1050);
+
+        let histogram =
+            UPDATE_LAG_SECONDS.with_label_values(&["feed_lag_valid", "network_lag_valid"]);
+        assert!(histogram.get_sample_count() > 0);
+        assert_eq!(histogram.get_sample_sum(), 50.0);
+    }
+
+    #[test]
+    fn test_record_update_lag_equal_timestamps() {
+        // update_timestamp == feed_timestamp should not record lag
+        let histogram_before =
+            UPDATE_LAG_SECONDS.with_label_values(&["feed_lag_equal", "network_lag_equal"]);
+        let count_before = histogram_before.get_sample_count();
+
+        UpdateMetrics::record_update_lag("feed_lag_equal", "network_lag_equal", 2000, 2000);
+
+        let histogram_after =
+            UPDATE_LAG_SECONDS.with_label_values(&["feed_lag_equal", "network_lag_equal"]);
+        let count_after = histogram_after.get_sample_count();
+
+        // Count should not increase
+        assert_eq!(count_before, count_after);
+    }
+
+    #[test]
+    fn test_record_update_lag_update_before_feed() {
+        // update_timestamp < feed_timestamp should not record lag
+        let histogram_before =
+            UPDATE_LAG_SECONDS.with_label_values(&["feed_lag_before", "network_lag_before"]);
+        let count_before = histogram_before.get_sample_count();
+
+        UpdateMetrics::record_update_lag("feed_lag_before", "network_lag_before", 3000, 2500);
+
+        let histogram_after =
+            UPDATE_LAG_SECONDS.with_label_values(&["feed_lag_before", "network_lag_before"]);
+        let count_after = histogram_after.get_sample_count();
+
+        // Count should not increase
+        assert_eq!(count_before, count_after);
+    }
+
+    #[test]
+    fn test_record_update_deviation() {
+        UpdateMetrics::record_update_deviation("feed_upd_dev", "network_upd_dev", 3.75);
+
+        let histogram =
+            UPDATE_DEVIATION_PERCENT.with_label_values(&["feed_upd_dev", "network_upd_dev"]);
+        assert!(histogram.get_sample_count() > 0);
+    }
+
+    #[test]
+    fn test_record_update_attempt_success() {
+        UpdateMetrics::record_update_attempt("feed_attempt_ok", "network_attempt_ok", true);
+
+        let counter = UPDATE_ATTEMPT_COUNT.with_label_values(&[
+            "feed_attempt_ok",
+            "network_attempt_ok",
+            "success",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+
+    #[test]
+    fn test_record_update_attempt_failure() {
+        UpdateMetrics::record_update_attempt("feed_attempt_fail", "network_attempt_fail", false);
+
+        let counter = UPDATE_ATTEMPT_COUNT.with_label_values(&[
+            "feed_attempt_fail",
+            "network_attempt_fail",
+            "failure",
+        ]);
+        assert!(counter.get() > 0.0);
+    }
+}

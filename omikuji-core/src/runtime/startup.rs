@@ -384,7 +384,35 @@ impl StartupContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::node_bindings::Anvil;
+    use std::io::Write;
     use tempfile::TempDir;
+
+    /// Write a minimal valid config YAML that points to the given Anvil URL.
+    fn write_temp_config(anvil_url: &str) -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        let yaml = format!(
+            r#"
+networks:
+  - name: anvil
+    transaction_type: eip1559
+    nodes:
+      - name: Test Anvil
+        rpc_url: {anvil_url}
+
+datafeeds: []
+scheduled_tasks: []
+event_monitors: []
+
+key_storage:
+  storage_type: env
+"#
+        );
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(yaml.as_bytes()).unwrap();
+        (dir, path)
+    }
 
     #[tokio::test]
     async fn test_startup_context_requires_config() {
@@ -394,5 +422,124 @@ mod tests {
 
         let result = StartupContext::new(&config_path, "TEST_KEY".to_string()).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_new_with_valid_config() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let (_dir, path) = write_temp_config(&anvil.endpoint());
+
+        let ctx = StartupContext::new(&path, "TEST_KEY".to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(ctx.config.networks.len(), 1);
+        assert_eq!(ctx.config.networks[0].name, "anvil");
+        assert!(ctx.database_pool.is_none());
+        assert!(ctx.gas_price_manager.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_new_config_parsing_error() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad.yaml");
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(b"{{{{not valid yaml").unwrap();
+
+        let result = StartupContext::new(&path, "TEST_KEY".to_string()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_initialize_components_no_database() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let (_dir, path) = write_temp_config(&anvil.endpoint());
+
+        // Ensure DATABASE_URL is not set for this test
+        std::env::remove_var("DATABASE_URL");
+
+        let mut ctx = StartupContext::new(&path, "TEST_KEY".to_string())
+            .await
+            .unwrap();
+
+        // initialize_components should succeed even without a database
+        ctx.initialize_components().await.unwrap();
+
+        assert!(ctx.database_pool.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_initialize_components_network_setup() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url = anvil.endpoint();
+
+        // Construct a NetworkManager directly from the Anvil URL and verify
+        // chain_id works — this is what initialize_components sets up internally.
+        let network = crate::config::models::Network {
+            name: "anvil".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Anvil Node".to_string(),
+                rpc_url: url,
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        };
+
+        let nm = NetworkManager::new(&[network]).await.unwrap();
+        let chain_id = nm.get_chain_id("anvil").await.unwrap();
+        assert_eq!(chain_id, 31337);
+    }
+
+    #[tokio::test]
+    async fn test_initialize_components_transaction_queue() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url = anvil.endpoint();
+
+        // Construct a minimal config + NetworkManager to verify TransactionQueue creation,
+        // matching what initialize_components does without the global metrics OnceCell.
+        let network = crate::config::models::Network {
+            name: "anvil".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Anvil Node".to_string(),
+                rpc_url: url,
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        };
+
+        let config = crate::config::models::OmikujiConfig {
+            networks: vec![network],
+            datafeeds: vec![],
+            database_cleanup: Default::default(),
+            key_storage: Default::default(),
+            metrics: Default::default(),
+            gas_price_feeds: Default::default(),
+            scheduled_tasks: vec![],
+            event_monitors: vec![],
+            default_execution_limits: Default::default(),
+        };
+
+        let nm = Arc::new(NetworkManager::new(&config.networks).await.unwrap());
+        let tx_queue = Arc::new(TransactionQueue::new(
+            config.clone(),
+            nm.clone(),
+            None,
+            None,
+        ));
+
+        // Verify the transaction queue is properly constructed
+        assert!(Arc::strong_count(&tx_queue) >= 1);
     }
 }

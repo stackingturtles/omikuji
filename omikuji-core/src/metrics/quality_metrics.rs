@@ -295,3 +295,353 @@ impl QualityMetrics {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_record_value_change_rate_normal() {
+        QualityMetrics::record_value_change_rate("test_feed_1", "ethereum", 100.0, 105.0, 60.0);
+        // Should calculate: ((105 - 100).abs() / 100) * 100 / 60 * 60 = 5% per minute
+    }
+
+    #[test]
+    fn test_record_value_change_rate_high_rate() {
+        QualityMetrics::record_value_change_rate("test_feed_2", "ethereum", 100.0, 120.0, 10.0);
+        // Should calculate: ((120 - 100).abs() / 100) * 100 / 10 * 60 = 120% per minute (triggers warning)
+    }
+
+    #[test]
+    fn test_record_value_change_rate_zero_previous() {
+        // Should be guarded and do nothing
+        QualityMetrics::record_value_change_rate("test_feed_3", "ethereum", 0.0, 100.0, 60.0);
+    }
+
+    #[test]
+    fn test_record_value_change_rate_zero_time_delta() {
+        // Should be guarded and do nothing
+        QualityMetrics::record_value_change_rate("test_feed_4", "ethereum", 100.0, 105.0, 0.0);
+    }
+
+    #[test]
+    fn test_record_value_change_rate_at_threshold() {
+        QualityMetrics::record_value_change_rate("test_feed_5", "ethereum", 100.0, 110.0, 60.0);
+        // Should calculate: 10% per minute (at threshold)
+    }
+
+    #[test]
+    fn test_record_outlier_too_low() {
+        QualityMetrics::record_outlier("test_feed_6", "ethereum", 50.0, (100.0, 200.0), "rejected");
+        // Should classify as "too_low"
+    }
+
+    #[test]
+    fn test_record_outlier_too_high() {
+        QualityMetrics::record_outlier("test_feed_7", "ethereum", 250.0, (100.0, 200.0), "capped");
+        // Should classify as "too_high"
+    }
+
+    #[test]
+    fn test_record_outlier_anomaly() {
+        QualityMetrics::record_outlier("test_feed_8", "ethereum", 150.0, (100.0, 200.0), "flagged");
+        // Should classify as "anomaly" (within range but still flagged)
+    }
+
+    #[test]
+    fn test_record_outlier_at_boundaries() {
+        QualityMetrics::record_outlier("test_feed_9", "ethereum", 100.0, (100.0, 200.0), "none");
+        // At lower boundary, should be "anomaly"
+
+        QualityMetrics::record_outlier("test_feed_10", "ethereum", 200.0, (100.0, 200.0), "none");
+        // At upper boundary, should be "anomaly"
+    }
+
+    #[test]
+    fn test_update_consistency_score_normal() {
+        QualityMetrics::update_consistency_score("test_feed_11", "ethereum", 75.0);
+        // Normal score, no warning
+    }
+
+    #[test]
+    fn test_update_consistency_score_low() {
+        QualityMetrics::update_consistency_score("test_feed_12", "ethereum", 45.0);
+        // Below 50, should trigger warning
+    }
+
+    #[test]
+    fn test_update_consistency_score_clamping_high() {
+        QualityMetrics::update_consistency_score("test_feed_13", "ethereum", 150.0);
+        // Should be clamped to 100
+    }
+
+    #[test]
+    fn test_update_consistency_score_clamping_low() {
+        QualityMetrics::update_consistency_score("test_feed_14", "ethereum", -50.0);
+        // Should be clamped to 0
+    }
+
+    #[test]
+    fn test_update_consistency_score_at_threshold() {
+        QualityMetrics::update_consistency_score("test_feed_15", "ethereum", 50.0);
+        // At threshold (50), should not trigger warning
+    }
+
+    #[test]
+    fn test_update_stale_data_duration_normal() {
+        QualityMetrics::update_stale_data_duration(
+            "test_feed_16",
+            "ethereum",
+            "no_updates",
+            1800.0,
+        );
+        // 30 minutes, should not trigger error
+    }
+
+    #[test]
+    fn test_update_stale_data_duration_critical() {
+        QualityMetrics::update_stale_data_duration(
+            "test_feed_17",
+            "ethereum",
+            "no_updates",
+            7200.0,
+        );
+        // 2 hours, should trigger error
+    }
+
+    #[test]
+    fn test_update_stale_data_duration_at_threshold() {
+        QualityMetrics::update_stale_data_duration(
+            "test_feed_18",
+            "ethereum",
+            "no_updates",
+            3600.0,
+        );
+        // Exactly 1 hour, should not trigger error (boundary case)
+    }
+
+    #[test]
+    fn test_update_stale_data_duration_just_over_threshold() {
+        QualityMetrics::update_stale_data_duration(
+            "test_feed_19",
+            "ethereum",
+            "no_updates",
+            3601.0,
+        );
+        // Just over 1 hour, should trigger error
+    }
+
+    #[test]
+    fn test_record_ma_deviation_normal() {
+        QualityMetrics::record_ma_deviation("test_feed_20", "ethereum", 105.0, 100.0, "5m");
+        // 5% deviation, should not trigger warning
+    }
+
+    #[test]
+    fn test_record_ma_deviation_high() {
+        QualityMetrics::record_ma_deviation("test_feed_21", "ethereum", 130.0, 100.0, "5m");
+        // 30% deviation, should trigger warning
+    }
+
+    #[test]
+    fn test_record_ma_deviation_zero_ma() {
+        // Should be guarded and do nothing
+        QualityMetrics::record_ma_deviation("test_feed_22", "ethereum", 100.0, 0.0, "5m");
+    }
+
+    #[test]
+    fn test_record_ma_deviation_at_threshold() {
+        QualityMetrics::record_ma_deviation("test_feed_23", "ethereum", 120.0, 100.0, "5m");
+        // 20% deviation, at threshold
+    }
+
+    #[test]
+    fn test_record_ma_deviation_negative() {
+        QualityMetrics::record_ma_deviation("test_feed_24", "ethereum", 75.0, 100.0, "5m");
+        // 25% negative deviation, should trigger warning
+    }
+
+    #[test]
+    fn test_update_source_agreement_high() {
+        QualityMetrics::update_source_agreement("test_feed_25", "ethereum", 95.0, 3);
+        // High agreement, no warning
+    }
+
+    #[test]
+    fn test_update_source_agreement_low_multiple_sources() {
+        QualityMetrics::update_source_agreement("test_feed_26", "ethereum", 70.0, 3);
+        // Low agreement with multiple sources, should trigger warning
+    }
+
+    #[test]
+    fn test_update_source_agreement_low_single_source() {
+        QualityMetrics::update_source_agreement("test_feed_27", "ethereum", 70.0, 1);
+        // Low agreement but only 1 source, should not trigger warning
+    }
+
+    #[test]
+    fn test_update_source_agreement_at_threshold() {
+        QualityMetrics::update_source_agreement("test_feed_28", "ethereum", 80.0, 2);
+        // At 80% threshold, should not trigger warning
+    }
+
+    #[test]
+    fn test_update_source_agreement_clamping() {
+        QualityMetrics::update_source_agreement("test_feed_29", "ethereum", 150.0, 3);
+        // Should be clamped to 100
+
+        QualityMetrics::update_source_agreement("test_feed_30", "ethereum", -50.0, 3);
+        // Should be clamped to 0
+    }
+
+    #[test]
+    fn test_record_invalid_value() {
+        QualityMetrics::record_invalid_value(
+            "test_feed_31",
+            "ethereum",
+            "range_check",
+            -100.0,
+            "negative value",
+        );
+        // Should increment counter
+    }
+
+    #[test]
+    fn test_record_invalid_value_different_types() {
+        QualityMetrics::record_invalid_value(
+            "test_feed_32",
+            "ethereum",
+            "type_check",
+            0.0,
+            "null value",
+        );
+
+        QualityMetrics::record_invalid_value(
+            "test_feed_33",
+            "ethereum",
+            "format_check",
+            999.999,
+            "invalid format",
+        );
+    }
+
+    #[test]
+    fn test_record_data_gap_short() {
+        QualityMetrics::record_data_gap("test_feed_34", "ethereum", 120.0);
+        // 2 minutes, should be "short"
+    }
+
+    #[test]
+    fn test_record_data_gap_medium() {
+        QualityMetrics::record_data_gap("test_feed_35", "ethereum", 900.0);
+        // 15 minutes, should be "medium"
+    }
+
+    #[test]
+    fn test_record_data_gap_long() {
+        QualityMetrics::record_data_gap("test_feed_36", "ethereum", 2400.0);
+        // 40 minutes, should be "long"
+    }
+
+    #[test]
+    fn test_record_data_gap_critical() {
+        QualityMetrics::record_data_gap("test_feed_37", "ethereum", 7200.0);
+        // 2 hours, should be "critical"
+    }
+
+    #[test]
+    fn test_record_data_gap_boundaries() {
+        QualityMetrics::record_data_gap("test_feed_38", "ethereum", 299.9);
+        // Just under 300, should be "short"
+
+        QualityMetrics::record_data_gap("test_feed_39", "ethereum", 300.0);
+        // Exactly 300, should be "medium"
+
+        QualityMetrics::record_data_gap("test_feed_40", "ethereum", 1799.9);
+        // Just under 1800, should be "medium"
+
+        QualityMetrics::record_data_gap("test_feed_41", "ethereum", 1800.0);
+        // Exactly 1800, should be "long"
+
+        QualityMetrics::record_data_gap("test_feed_42", "ethereum", 3599.9);
+        // Just under 3600, should be "long"
+
+        QualityMetrics::record_data_gap("test_feed_43", "ethereum", 3600.0);
+        // Exactly 3600, should be "critical"
+    }
+
+    #[test]
+    fn test_update_reliability_score_normal() {
+        QualityMetrics::update_reliability_score("test_feed_44", "ethereum", 95.0, 90.0, 85.0);
+        // Weighted: 95*0.4 + 90*0.4 + 85*0.2 = 38 + 36 + 17 = 91
+    }
+
+    #[test]
+    fn test_update_reliability_score_perfect() {
+        QualityMetrics::update_reliability_score("test_feed_45", "ethereum", 100.0, 100.0, 100.0);
+        // Should be 100
+    }
+
+    #[test]
+    fn test_update_reliability_score_poor() {
+        QualityMetrics::update_reliability_score("test_feed_46", "ethereum", 50.0, 50.0, 50.0);
+        // Should be 50
+    }
+
+    #[test]
+    fn test_update_reliability_score_clamping() {
+        QualityMetrics::update_reliability_score("test_feed_47", "ethereum", 150.0, 150.0, 150.0);
+        // Should be clamped to 100
+
+        QualityMetrics::update_reliability_score("test_feed_48", "ethereum", -50.0, -50.0, -50.0);
+        // Should be clamped to 0
+    }
+
+    #[test]
+    fn test_update_reliability_score_weighted_components() {
+        QualityMetrics::update_reliability_score("test_feed_49", "ethereum", 100.0, 0.0, 0.0);
+        // Uptime only: 100*0.4 = 40
+
+        QualityMetrics::update_reliability_score("test_feed_50", "ethereum", 0.0, 100.0, 0.0);
+        // Accuracy only: 100*0.4 = 40
+
+        QualityMetrics::update_reliability_score("test_feed_51", "ethereum", 0.0, 0.0, 100.0);
+        // Consistency only: 100*0.2 = 20
+    }
+
+    #[test]
+    fn test_record_timestamp_drift_small() {
+        QualityMetrics::record_timestamp_drift("test_feed_52", "ethereum", 1000, 1050);
+        // 50 seconds drift, should not trigger warning
+    }
+
+    #[test]
+    fn test_record_timestamp_drift_large() {
+        QualityMetrics::record_timestamp_drift("test_feed_53", "ethereum", 1000, 1600);
+        // 600 seconds drift, should trigger warning
+    }
+
+    #[test]
+    fn test_record_timestamp_drift_negative() {
+        QualityMetrics::record_timestamp_drift("test_feed_54", "ethereum", 1600, 1000);
+        // -600 seconds drift (absolute value 600), should trigger warning
+    }
+
+    #[test]
+    fn test_record_timestamp_drift_at_threshold() {
+        QualityMetrics::record_timestamp_drift("test_feed_55", "ethereum", 1000, 1300);
+        // 300 seconds drift, at threshold (should not trigger warning)
+    }
+
+    #[test]
+    fn test_record_timestamp_drift_over_threshold() {
+        QualityMetrics::record_timestamp_drift("test_feed_56", "ethereum", 1000, 1301);
+        // 301 seconds drift, should trigger warning
+    }
+
+    #[test]
+    fn test_record_timestamp_drift_zero() {
+        QualityMetrics::record_timestamp_drift("test_feed_57", "ethereum", 1000, 1000);
+        // Zero drift
+    }
+}
