@@ -178,3 +178,99 @@ pub async fn check_database(timeout: Duration) -> Vec<CheckResult> {
 
     results
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::sync::Mutex;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Async mutex to serialize all database tests that mutate DATABASE_URL.
+    /// This prevents parallel test execution from causing env var races.
+    /// Using tokio::sync::Mutex so the guard can be held across await points.
+    static ENV_MUTEX: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
+
+    /// Run `check_database` with DATABASE_URL set to the given value (or removed if None),
+    /// then restore the original value. Holds the ENV_MUTEX for the entire duration.
+    async fn run_with_database_url(value: Option<&str>) -> Vec<CheckResult> {
+        let _guard = ENV_MUTEX.lock().await;
+        let saved = std::env::var("DATABASE_URL").ok();
+
+        match value {
+            Some(v) => unsafe { std::env::set_var("DATABASE_URL", v) },
+            None => unsafe { std::env::remove_var("DATABASE_URL") },
+        }
+
+        let results = check_database(TEST_TIMEOUT).await;
+
+        match saved {
+            Some(v) => unsafe { std::env::set_var("DATABASE_URL", v) },
+            None => unsafe { std::env::remove_var("DATABASE_URL") },
+        }
+
+        results
+    }
+
+    #[tokio::test]
+    async fn test_check_database_url_unset() {
+        let results = run_with_database_url(None).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, CheckStatus::Fail);
+        assert_eq!(results[0].name, "DATABASE_URL set");
+        assert!(results[0].message.contains("not set"));
+        assert!(results[0].hint.is_some());
+        assert!(results[0].hint.as_ref().unwrap().contains("DATABASE_URL"));
+    }
+
+    #[tokio::test]
+    async fn test_check_database_bad_scheme() {
+        let results = run_with_database_url(Some("mysql://user:pass@localhost:3306/mydb")).await;
+
+        // Should have: Pass for env var set, Fail for URL format
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].status, CheckStatus::Pass);
+        assert_eq!(results[0].name, "DATABASE_URL set");
+        assert_eq!(results[1].status, CheckStatus::Fail);
+        assert_eq!(results[1].name, "URL format");
+        assert!(
+            results[1].message.contains("postgres://")
+                || results[1].message.contains("postgresql://"),
+            "Expected message about postgres scheme, got: {}",
+            results[1].message
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_database_invalid_url_truly_malformed() {
+        let results = run_with_database_url(Some("postgres://[invalid")).await;
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].status, CheckStatus::Pass);
+        assert_eq!(results[0].name, "DATABASE_URL set");
+        assert_eq!(results[1].status, CheckStatus::Fail);
+        assert_eq!(results[1].name, "URL format");
+        assert!(results[1].message.contains("not a valid URL"));
+    }
+
+    #[tokio::test]
+    async fn test_check_database_valid_format_unreachable() {
+        let results =
+            run_with_database_url(Some("postgres://user:pass@localhost:19999/nonexistent")).await;
+
+        // Should get: Pass for env var, Pass for URL format, Fail for connectivity
+        assert!(
+            results.len() >= 3,
+            "Expected at least 3 results, got {}: {results:?}",
+            results.len()
+        );
+        assert_eq!(results[0].status, CheckStatus::Pass);
+        assert_eq!(results[0].name, "DATABASE_URL set");
+        assert_eq!(results[1].status, CheckStatus::Pass);
+        assert_eq!(results[1].name, "URL format");
+        assert_eq!(results[2].status, CheckStatus::Fail);
+        assert_eq!(results[2].name, "Connectivity");
+    }
+}

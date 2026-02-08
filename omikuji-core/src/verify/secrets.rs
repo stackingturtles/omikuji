@@ -184,3 +184,54 @@ pub async fn check_secrets(
 
     results
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::models::KeyStorageConfig;
+    use std::time::Duration;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[tokio::test]
+    async fn test_check_secrets_unknown_storage_type() {
+        let config = KeyStorageConfig {
+            storage_type: "unknown-provider".to_string(),
+            ..KeyStorageConfig::default()
+        };
+        let networks = vec![];
+
+        let results = check_secrets(&config, &networks, TEST_TIMEOUT).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, CheckStatus::Fail);
+        assert_eq!(results[0].category, CheckCategory::Secrets);
+        assert_eq!(results[0].name, "Provider factory");
+        assert!(results[0].message.contains("Unknown storage type"));
+        assert!(results[0].message.contains("unknown-provider"));
+        assert!(results[0].hint.is_some());
+        assert!(results[0].hint.as_ref().unwrap().contains("Valid types"));
+    }
+
+    #[tokio::test]
+    async fn test_check_secrets_vault_no_factory_registered() {
+        // "vault" is a valid storage type, but the global registry may not have
+        // a factory registered for it in the test environment. This tests the
+        // "Provider not available" path.
+        let config = KeyStorageConfig {
+            storage_type: "vault".to_string(),
+            ..KeyStorageConfig::default()
+        };
+        let networks = vec![];
+
+        let results = check_secrets(&config, &networks, TEST_TIMEOUT).await;
+
+        // We expect at least one result. If no factory is registered, we get a Fail
+        // for "Provider factory". If a factory IS registered (e.g., community vault),
+        // we may get further results. Either way, the first result should be about
+        // the provider factory.
+        assert!(!results.is_empty());
+        assert_eq!(results[0].name, "Provider factory");
+        assert_eq!(results[0].category, CheckCategory::Secrets);
+    }
+}

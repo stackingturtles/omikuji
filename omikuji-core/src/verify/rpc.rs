@@ -130,3 +130,80 @@ async fn check_one_node(
 
     results
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::models::{Network, NetworkNode};
+    use std::time::Duration;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(3);
+
+    fn test_network(name: &str, nodes: Vec<NetworkNode>) -> Network {
+        Network {
+            name: name.to_string(),
+            nodes,
+            ..Network::default()
+        }
+    }
+
+    fn test_node(name: &str, rpc_url: &str) -> NetworkNode {
+        NetworkNode {
+            name: name.to_string(),
+            rpc_url: rpc_url.to_string(),
+            ws_url: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_check_rpc_empty_networks() {
+        let results = check_rpc(&[], TEST_TIMEOUT).await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_check_rpc_invalid_url() {
+        let node = test_node("bad-node", "not a url at all");
+        let network = test_network("testnet", vec![node]);
+        let results = check_rpc(&[network], TEST_TIMEOUT).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, CheckStatus::Fail);
+        assert_eq!(results[0].category, CheckCategory::Rpc);
+        assert!(results[0].message.contains("Invalid URL"));
+        assert!(results[0].name.contains("testnet"));
+        assert!(results[0].name.contains("bad-node"));
+    }
+
+    #[tokio::test]
+    async fn test_check_rpc_unreachable_url() {
+        let node = test_node("offline-node", "http://127.0.0.1:19877");
+        let network = test_network("testnet", vec![node]);
+        let results = check_rpc(&[network], TEST_TIMEOUT).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, CheckStatus::Fail);
+        assert_eq!(results[0].category, CheckCategory::Rpc);
+        // Should fail on get_chain_id — either timeout or connection error
+        let msg = &results[0].message;
+        assert!(
+            msg.contains("get_chain_id failed") || msg.contains("Timed out"),
+            "Unexpected message: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_rpc_multiple_nodes() {
+        let node1 = test_node("node-a", "not-a-url");
+        let node2 = test_node("node-b", "http://127.0.0.1:19878");
+        let network = test_network("multi", vec![node1, node2]);
+        let results = check_rpc(&[network], TEST_TIMEOUT).await;
+
+        // Both nodes should produce results
+        assert_eq!(results.len(), 2);
+        for result in &results {
+            assert_eq!(result.status, CheckStatus::Fail);
+            assert_eq!(result.category, CheckCategory::Rpc);
+        }
+    }
+}
