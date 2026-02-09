@@ -1,6 +1,6 @@
 [package]
 name = "omikuji-core"
-version = "0.7.1"
+version = "0.7.5"
 edition = "2021"
 authors = ["Stacking Turtles Ltd"]
 license = "MIT OR Apache-2.0"
