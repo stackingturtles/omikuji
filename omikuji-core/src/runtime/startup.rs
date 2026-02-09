@@ -25,7 +25,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::config::{self, models::OmikujiConfig};
 use crate::database::{self, cleanup::CleanupManager, FeedLogRepository};
@@ -256,6 +256,8 @@ impl StartupContext {
         let network_manager = Arc::get_mut(&mut self.network_manager)
             .context("Cannot get mutable reference to network manager")?;
 
+        let mut failed_networks = Vec::new();
+
         for network in &self.config.networks {
             match network_manager
                 .load_wallet_from_key_storage(&network.name, key_storage.as_ref())
@@ -290,12 +292,18 @@ impl StartupContext {
                     }
 
                     error!("Failed to load wallet for network {}: {}", network.name, e);
-                    warn!(
-                        "Transactions on {} network will not be possible",
-                        network.name
-                    );
+                    failed_networks.push(network.name.clone());
                 }
             }
+        }
+
+        if !failed_networks.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Failed to load wallets for {} network(s): {}. \
+                 Run 'omikuji verify' to diagnose key storage issues.",
+                failed_networks.len(),
+                failed_networks.join(", ")
+            ));
         }
 
         Ok(())
@@ -458,6 +466,13 @@ key_storage:
         // Ensure DATABASE_URL is not set for this test
         std::env::remove_var("DATABASE_URL");
 
+        // Set a valid private key so wallet loading succeeds.
+        // This is the first default Anvil account private key.
+        std::env::set_var(
+            "OMIKUJI_PRIVATE_KEY_ANVIL",
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        );
+
         let mut ctx = StartupContext::new(&path, "TEST_KEY".to_string())
             .await
             .unwrap();
@@ -466,6 +481,93 @@ key_storage:
         ctx.initialize_components().await.unwrap();
 
         assert!(ctx.database_pool.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_initialize_wallets_fails_on_missing_key() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let (_dir, path) = write_temp_config(&anvil.endpoint());
+
+        // Ensure the key env var does NOT exist
+        std::env::remove_var("OMIKUJI_PRIVATE_KEY_ANVIL");
+
+        let mut ctx = StartupContext::new(&path, "TEST_KEY".to_string())
+            .await
+            .unwrap();
+
+        // Initialize network first (required by initialize_wallets)
+        ctx.initialize_network().await.unwrap();
+
+        let err = ctx.initialize_wallets().await.unwrap_err();
+        let msg = err.to_string();
+
+        assert!(
+            msg.contains("Failed to load wallets"),
+            "should report wallet failure: {msg}"
+        );
+        assert!(
+            msg.contains("anvil"),
+            "should list the failed network: {msg}"
+        );
+        assert!(
+            msg.contains("omikuji verify"),
+            "should suggest running verify: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_initialize_wallets_fails_lists_all_failed_networks() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let url = anvil.endpoint();
+
+        // Config with two networks
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.yaml");
+        let yaml = format!(
+            r#"
+networks:
+  - name: net-a
+    transaction_type: eip1559
+    nodes:
+      - name: Node A
+        rpc_url: {url}
+  - name: net-b
+    transaction_type: eip1559
+    nodes:
+      - name: Node B
+        rpc_url: {url}
+
+datafeeds: []
+scheduled_tasks: []
+event_monitors: []
+
+key_storage:
+  storage_type: env
+"#
+        );
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(yaml.as_bytes()).unwrap();
+
+        // Neither key set
+        std::env::remove_var("OMIKUJI_PRIVATE_KEY_NET_A");
+        std::env::remove_var("OMIKUJI_PRIVATE_KEY_NET_B");
+
+        let mut ctx = StartupContext::new(&path, "TEST_KEY".to_string())
+            .await
+            .unwrap();
+
+        // Initialize network first (required by initialize_wallets)
+        ctx.initialize_network().await.unwrap();
+
+        let err = ctx.initialize_wallets().await.unwrap_err();
+        let msg = err.to_string();
+
+        assert!(
+            msg.contains("2 network(s)"),
+            "should report count of 2: {msg}"
+        );
+        assert!(msg.contains("net-a"), "should list net-a: {msg}");
+        assert!(msg.contains("net-b"), "should list net-b: {msg}");
     }
 
     #[tokio::test]

@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use alloy::signers::local::PrivateKeySigner;
+
 use crate::config::models::KeyStorageConfig;
 use crate::config::models::Network;
 use crate::plugin_registry::global_registry;
@@ -131,20 +133,77 @@ pub async fn check_secrets(
         }
     }
 
-    // 3. Check if keys exist for configured networks
+    // 3. Check if keys exist for configured networks and validate they are parseable
     let start = Instant::now();
     match tokio::time::timeout(timeout, provider.list_networks()).await {
         Ok(Ok(stored_networks)) => {
             for network in networks {
+                let start_key = Instant::now();
                 if stored_networks.contains(&network.name) {
-                    results.push(CheckResult {
-                        category: CheckCategory::Secrets,
-                        name: format!("Key: {}", network.name),
-                        status: CheckStatus::Pass,
-                        message: "Key found".to_string(),
-                        hint: None,
-                        duration: start.elapsed(),
-                    });
+                    // Key exists — now verify it's actually parseable as a signer
+                    match tokio::time::timeout(timeout, provider.get_private_key(&network.name))
+                        .await
+                    {
+                        Ok(Ok(key)) => {
+                            let trimmed = key.trim();
+                            match trimmed.parse::<PrivateKeySigner>() {
+                                Ok(signer) => {
+                                    results.push(CheckResult {
+                                        category: CheckCategory::Secrets,
+                                        name: format!("Key: {}", network.name),
+                                        status: CheckStatus::Pass,
+                                        message: format!(
+                                            "Key valid (wallet: {:?})",
+                                            signer.address()
+                                        ),
+                                        hint: None,
+                                        duration: start_key.elapsed(),
+                                    });
+                                }
+                                Err(e) => {
+                                    results.push(CheckResult {
+                                        category: CheckCategory::Secrets,
+                                        name: format!("Key: {}", network.name),
+                                        status: CheckStatus::Fail,
+                                        message: format!(
+                                            "Key found but invalid: {} (length: {}, starts_with 0x: {})",
+                                            e,
+                                            trimmed.len(),
+                                            trimmed.starts_with("0x")
+                                        ),
+                                        hint: Some(
+                                            "Expected a 64-char hex string optionally prefixed with 0x"
+                                                .to_string(),
+                                        ),
+                                        duration: start_key.elapsed(),
+                                    });
+                                }
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            results.push(CheckResult {
+                                category: CheckCategory::Secrets,
+                                name: format!("Key: {}", network.name),
+                                status: CheckStatus::Fail,
+                                message: format!("Key exists but could not be read: {e}"),
+                                hint: None,
+                                duration: start_key.elapsed(),
+                            });
+                        }
+                        Err(_) => {
+                            results.push(CheckResult {
+                                category: CheckCategory::Secrets,
+                                name: format!("Key: {}", network.name),
+                                status: CheckStatus::Warn,
+                                message: format!(
+                                    "Key read timed out after {} s",
+                                    timeout.as_secs()
+                                ),
+                                hint: None,
+                                duration: start_key.elapsed(),
+                            });
+                        }
+                    }
                 } else {
                     results.push(CheckResult {
                         category: CheckCategory::Secrets,
@@ -155,7 +214,7 @@ pub async fn check_secrets(
                             "Import with `omikuji key import -n {}`",
                             network.name
                         )),
-                        duration: start.elapsed(),
+                        duration: start_key.elapsed(),
                     });
                 }
             }
