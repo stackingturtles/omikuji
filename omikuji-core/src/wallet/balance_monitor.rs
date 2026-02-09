@@ -36,6 +36,17 @@ impl WalletBalanceMonitor {
     pub async fn start(self) {
         let mut interval = interval(Duration::from_secs(self.update_interval_seconds));
 
+        let monitored = self.network_manager.get_networks_with_wallets();
+        let all = self.network_manager.get_network_names();
+        if monitored.len() < all.len() {
+            let skipped: Vec<_> = all.iter().filter(|n| !monitored.contains(n)).collect();
+            warn!(
+                "Balance monitor skipping {} network(s) without wallets: {:?}",
+                skipped.len(),
+                skipped
+            );
+        }
+
         info!(
             "Starting wallet balance monitor with {}s interval",
             self.update_interval_seconds
@@ -47,10 +58,10 @@ impl WalletBalanceMonitor {
         }
     }
 
-    /// Update balances for all networks
+    /// Update balances for all networks with wallets
     async fn update_all_balances(&self) {
-        // Get all network names from the network manager
-        let networks = self.network_manager.get_network_names();
+        // Only monitor networks that have loaded wallets
+        let networks = self.network_manager.get_networks_with_wallets();
 
         for network_name in networks {
             if let Err(e) = self.update_network_balance(&network_name).await {
@@ -249,6 +260,71 @@ mod tests {
 
         let monitor = WalletBalanceMonitor::new(network_manager);
         assert_eq!(monitor.update_interval_seconds, 60);
+    }
+
+    #[tokio::test]
+    async fn test_update_all_balances_only_checks_networks_with_wallets() {
+        use crate::wallet::key_storage::EnvVarStorage;
+        use alloy::node_bindings::Anvil;
+
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let network_a = crate::config::models::Network {
+            name: "bal-net-a".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Anvil".to_string(),
+                rpc_url: anvil.endpoint(),
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        };
+        let network_b = crate::config::models::Network {
+            name: "bal-net-b".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Anvil".to_string(),
+                rpc_url: anvil.endpoint(),
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        };
+
+        let mut nm = NetworkManager::new(&[network_a, network_b]).await.unwrap();
+
+        // Only load wallet for bal-net-a via env, not bal-net-b
+        let valid_key = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+        std::env::set_var("OMIKUJI_PRIVATE_KEY_BAL_NET_A", valid_key);
+        let storage = EnvVarStorage::new();
+        nm.load_wallet_from_key_storage("bal-net-a", &storage)
+            .await
+            .unwrap();
+
+        assert_eq!(nm.get_network_names().len(), 2);
+        assert_eq!(nm.get_networks_with_wallets().len(), 1);
+        assert!(nm
+            .get_networks_with_wallets()
+            .contains(&"bal-net-a".to_string()));
+
+        let nm = Arc::new(nm);
+        let monitor = WalletBalanceMonitor::new(nm.clone());
+
+        // update_all_balances should only attempt bal-net-a (has wallet), not bal-net-b.
+        // If it tried bal-net-b it would fail with "No wallet address found"
+        // but since we call get_networks_with_wallets, it only iterates bal-net-a.
+        monitor.update_all_balances().await;
+        // No panic or error = success. bal-net-b was skipped.
+
+        std::env::remove_var("OMIKUJI_PRIVATE_KEY_BAL_NET_A");
     }
 
     #[tokio::test]

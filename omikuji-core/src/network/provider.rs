@@ -114,9 +114,16 @@ impl NetworkManager {
             private_key.len()
         );
 
-        let signer = private_key
-            .parse::<PrivateKeySigner>()
-            .with_context(|| "Failed to parse private key as signer")?;
+        let trimmed = private_key.trim();
+        let signer = trimmed.parse::<PrivateKeySigner>().with_context(|| {
+            format!(
+                "Failed to parse private key for network {network_name} as signer \
+                     (key length: {}, starts_with 0x: {}). \
+                     Expected a 64-char hex string optionally prefixed with 0x.",
+                trimmed.len(),
+                trimmed.starts_with("0x")
+            )
+        })?;
 
         // Store the wallet address
         let wallet_address = signer.address();
@@ -125,7 +132,7 @@ impl NetworkManager {
 
         // Store the private key (we'll create providers with wallets on demand)
         self.private_keys
-            .insert(network_name.to_string(), private_key);
+            .insert(network_name.to_string(), trimmed.to_string());
 
         info!(
             "Successfully loaded wallet for network {} with address {}",
@@ -152,10 +159,17 @@ impl NetworkManager {
             .with_context(|| format!("Failed to retrieve key for network {network_name}"))?;
 
         let private_key = private_key_secret.expose_secret();
+        let trimmed = private_key.trim();
 
-        let signer = private_key
-            .parse::<PrivateKeySigner>()
-            .with_context(|| "Failed to parse private key as signer")?;
+        let signer = trimmed.parse::<PrivateKeySigner>().with_context(|| {
+            format!(
+                "Failed to parse private key for network {network_name} as signer \
+                     (key length: {}, starts_with 0x: {}). \
+                     Expected a 64-char hex string optionally prefixed with 0x.",
+                trimmed.len(),
+                trimmed.starts_with("0x")
+            )
+        })?;
 
         // Store the wallet address
         let wallet_address = signer.address();
@@ -164,7 +178,7 @@ impl NetworkManager {
 
         // Store the private key (we'll create providers with wallets on demand)
         self.private_keys
-            .insert(network_name.to_string(), private_key.to_string());
+            .insert(network_name.to_string(), trimmed.to_string());
 
         info!(
             "Successfully loaded wallet for network {} with address {} from key storage",
@@ -336,6 +350,24 @@ impl NetworkManager {
         self.networks.keys().cloned().collect()
     }
 
+    /// Get network names that have loaded wallets
+    pub fn get_networks_with_wallets(&self) -> Vec<String> {
+        self.wallet_addresses.keys().cloned().collect()
+    }
+
+    /// Create a provider from an RPC URL
+    /// Check if a wallet has been loaded for a specific network
+    #[cfg(test)]
+    pub fn has_wallet(&self, network_name: &str) -> bool {
+        self.wallet_addresses.contains_key(network_name)
+    }
+
+    /// Get stored private key for a network (for test assertions)
+    #[cfg(test)]
+    pub fn get_stored_private_key(&self, network_name: &str) -> Option<&str> {
+        self.private_keys.get(network_name).map(|s| s.as_str())
+    }
+
     /// Create a provider from an RPC URL
     async fn create_provider(rpc_url: &str) -> Result<EthProvider> {
         let url =
@@ -368,5 +400,225 @@ impl NetworkManager {
                 Err(NetworkError::ConnectionFailed(err.to_string()).into())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallet::key_storage::EnvVarStorage;
+    use alloy::node_bindings::Anvil;
+
+    /// First default Anvil account private key (without 0x prefix).
+    const ANVIL_KEY_NO_PREFIX: &str =
+        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    /// First default Anvil account private key (with 0x prefix).
+    const ANVIL_KEY_WITH_PREFIX: &str =
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+    fn anvil_network(rpc_url: String) -> Network {
+        crate::config::models::Network {
+            name: "anvil".to_string(),
+            nodes: vec![crate::config::models::NetworkNode {
+                name: "Anvil".to_string(),
+                rpc_url,
+                ws_url: None,
+            }],
+            transaction_type: "eip1559".to_string(),
+            gas_config: Default::default(),
+            gas_token: "ethereum".to_string(),
+            gas_token_symbol: "ETH".to_string(),
+            balance_alerts: None,
+            rpc_url: None,
+            ws_url: None,
+        }
+    }
+
+    // ── trim tests ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_load_wallet_from_key_storage_trims_whitespace() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let network = anvil_network(anvil.endpoint());
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        // Set env var with trailing newline (common AWS Secrets Manager artifact)
+        let env_var = "OMIKUJI_PRIVATE_KEY_ANVIL";
+        std::env::set_var(env_var, format!("{ANVIL_KEY_WITH_PREFIX}\n"));
+        let storage = EnvVarStorage::new();
+
+        nm.load_wallet_from_key_storage("anvil", &storage)
+            .await
+            .expect("should succeed after trimming");
+
+        assert!(nm.has_wallet("anvil"));
+        // Stored key should be trimmed
+        assert_eq!(
+            nm.get_stored_private_key("anvil").unwrap(),
+            ANVIL_KEY_WITH_PREFIX
+        );
+
+        std::env::remove_var(env_var);
+    }
+
+    #[tokio::test]
+    async fn test_load_wallet_from_key_storage_trims_spaces() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        // Use a unique network name to avoid env var collisions with parallel tests
+        let mut network = anvil_network(anvil.endpoint());
+        network.name = "trim-spaces".to_string();
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        let env_var = "OMIKUJI_PRIVATE_KEY_TRIM_SPACES";
+        std::env::set_var(env_var, format!("  {ANVIL_KEY_WITH_PREFIX}  "));
+        let storage = EnvVarStorage::new();
+
+        nm.load_wallet_from_key_storage("trim-spaces", &storage)
+            .await
+            .expect("should succeed after trimming leading/trailing spaces");
+
+        assert!(nm.has_wallet("trim-spaces"));
+        assert_eq!(
+            nm.get_stored_private_key("trim-spaces").unwrap(),
+            ANVIL_KEY_WITH_PREFIX
+        );
+
+        std::env::remove_var(env_var);
+    }
+
+    #[tokio::test]
+    async fn test_load_wallet_from_env_trims_whitespace() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let network = anvil_network(anvil.endpoint());
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        let env_var = "TEST_TRIM_KEY_ANVIL";
+        std::env::set_var(env_var, format!("{ANVIL_KEY_WITH_PREFIX}\n"));
+
+        nm.load_wallet_from_env("anvil", env_var)
+            .await
+            .expect("should succeed after trimming");
+
+        assert!(nm.has_wallet("anvil"));
+        assert_eq!(
+            nm.get_stored_private_key("anvil").unwrap(),
+            ANVIL_KEY_WITH_PREFIX
+        );
+
+        std::env::remove_var(env_var);
+    }
+
+    // ── error context tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_load_wallet_invalid_key_error_includes_network_name() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let mut network = anvil_network(anvil.endpoint());
+        network.name = "badkey-net".to_string();
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        let env_var = "OMIKUJI_PRIVATE_KEY_BADKEY_NET";
+        std::env::set_var(env_var, "not-a-valid-hex-key");
+        let storage = EnvVarStorage::new();
+
+        let err = nm
+            .load_wallet_from_key_storage("badkey-net", &storage)
+            .await
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("badkey-net"),
+            "error should mention network name: {msg}"
+        );
+        assert!(
+            msg.contains("key length:"),
+            "error should include key length: {msg}"
+        );
+        assert!(
+            msg.contains("starts_with 0x:"),
+            "error should mention 0x prefix status: {msg}"
+        );
+
+        std::env::remove_var(env_var);
+    }
+
+    #[tokio::test]
+    async fn test_load_wallet_from_env_invalid_key_error_includes_network_name() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let network = anvil_network(anvil.endpoint());
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        let env_var = "TEST_INVALID_KEY_ANVIL";
+        std::env::set_var(env_var, "garbage");
+
+        let err = nm.load_wallet_from_env("anvil", env_var).await.unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("anvil"),
+            "error should mention network name: {msg}"
+        );
+        assert!(
+            msg.contains("key length: 7"),
+            "error should include key length: {msg}"
+        );
+
+        std::env::remove_var(env_var);
+    }
+
+    // ── get_networks_with_wallets tests ─────────────────────────────
+
+    #[tokio::test]
+    async fn test_get_networks_with_wallets_empty_initially() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let network = anvil_network(anvil.endpoint());
+        let nm = NetworkManager::new(&[network]).await.unwrap();
+
+        // Network exists but no wallet loaded
+        assert_eq!(nm.get_network_names().len(), 1);
+        assert!(nm.get_networks_with_wallets().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_networks_with_wallets_after_load() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let mut network = anvil_network(anvil.endpoint());
+        network.name = "wallets-after".to_string();
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        let env_var = "OMIKUJI_PRIVATE_KEY_WALLETS_AFTER";
+        std::env::set_var(env_var, ANVIL_KEY_NO_PREFIX);
+        let storage = EnvVarStorage::new();
+
+        nm.load_wallet_from_key_storage("wallets-after", &storage)
+            .await
+            .unwrap();
+
+        let with_wallets = nm.get_networks_with_wallets();
+        assert_eq!(with_wallets.len(), 1);
+        assert!(with_wallets.contains(&"wallets-after".to_string()));
+
+        std::env::remove_var(env_var);
+    }
+
+    #[tokio::test]
+    async fn test_load_wallet_without_0x_prefix() {
+        let anvil = Anvil::new().try_spawn().expect("Anvil required");
+        let mut network = anvil_network(anvil.endpoint());
+        network.name = "no-prefix".to_string();
+        let mut nm = NetworkManager::new(&[network]).await.unwrap();
+
+        let env_var = "OMIKUJI_PRIVATE_KEY_NO_PREFIX";
+        std::env::set_var(env_var, ANVIL_KEY_NO_PREFIX);
+        let storage = EnvVarStorage::new();
+
+        nm.load_wallet_from_key_storage("no-prefix", &storage)
+            .await
+            .expect("key without 0x prefix should parse");
+
+        assert!(nm.has_wallet("no-prefix"));
+
+        std::env::remove_var(env_var);
     }
 }
