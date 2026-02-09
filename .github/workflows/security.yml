@@ -19,7 +19,7 @@ jobs:
   # ============================================================================
   audit:
     name: Security Audit (cargo-audit)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,7 +48,7 @@ jobs:
   # ============================================================================
   deny:
     name: Dependency Check (cargo-deny)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     strategy:
       matrix:
         checks:
@@ -72,7 +72,7 @@ jobs:
   # ============================================================================
   sarif:
     name: Generate SARIF Report
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -107,7 +107,7 @@ jobs:
   # ============================================================================
   security-summary:
     name: Security Summary
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     needs: [audit, deny]
     if: always()
     steps:

@@ -21,7 +21,7 @@ permissions:
 jobs:
   create-release:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: write
     outputs:
@@ -130,26 +130,16 @@ jobs:
       matrix:
         include:
           # Linux x64
-          - os: ubuntu-latest
+          - runner: [self-hosted, linux, x64]
             target: x86_64-unknown-linux-gnu
             name: omikuji-linux-x64
-          
-          # macOS x64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            name: omikuji-macos-x64
-          
+
           # macOS ARM64
-          - os: macos-latest
+          - runner: [self-hosted, macos, arm64]
             target: aarch64-apple-darwin
             name: omikuji-macos-arm64
-          
-          # Windows x64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: omikuji-windows-x64.exe
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     
     steps:
       - name: Checkout code
@@ -171,25 +161,19 @@ jobs:
       - name: Prepare binary
         shell: bash
         run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            BINARY_PATH="target/${{ matrix.target }}/release/omikuji.exe"
-          else
-            BINARY_PATH="target/${{ matrix.target }}/release/omikuji"
-          fi
-          
-          # Strip binary on Unix-like systems
-          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-            strip "$BINARY_PATH" || true
-          fi
-          
+          BINARY_PATH="target/${{ matrix.target }}/release/omikuji"
+
+          # Strip binary
+          strip "$BINARY_PATH" || true
+
           # Move and rename
           mv "$BINARY_PATH" "${{ matrix.name }}"
-          
+
           # Generate checksum
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            shasum -a 256 "${{ matrix.name }}" > "${{ matrix.name }}.sha256"
-          else
+          if command -v sha256sum &> /dev/null; then
             sha256sum "${{ matrix.name }}" > "${{ matrix.name }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.name }}" > "${{ matrix.name }}.sha256"
           fi
 
       - name: Upload binary and checksum
@@ -212,7 +196,7 @@ jobs:
   create-checksums:
     name: Create Combined Checksums
     needs: [create-release, build-binaries]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     
     steps:
       - name: Checkout code
@@ -263,7 +247,7 @@ jobs:
   build-docker:
     name: Build and Push Docker Images
     needs: create-release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       packages: write

@@ -19,7 +19,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, linux, x64]
 
     steps:
       - name: Checkout code
@@ -54,7 +54,7 @@ jobs:
 
   check-features:
     name: Check Features
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, linux, x64]
 
     steps:
       - name: Checkout code
