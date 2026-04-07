@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "omikuji"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
  "alloy",
  "anyhow",
@@ -3433,7 +3433,7 @@ dependencies = [
 
 [[package]]
 name = "omikuji-core"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
  "alloy",
  "anyhow",
