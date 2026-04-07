@@ -140,7 +140,7 @@ impl<'a> TransactionHandler<'a> {
                     &self.network,
                     self.context.name(),
                     &tx_hash_str,
-                    gas_used as u64,
+                    gas_used,
                     effective_gas_price,
                 )
                 .await
@@ -149,7 +149,7 @@ impl<'a> TransactionHandler<'a> {
                 GasMetrics::record_usd_cost(
                     self.context.name(),
                     &self.network,
-                    gas_used as u64,
+                    gas_used,
                     effective_gas_price,
                     gas_cost_usd.gas_token_price_usd,
                 );
@@ -181,7 +181,7 @@ impl<'a> TransactionHandler<'a> {
             // Create transaction details for logging
             let gas_price_wei = effective_gas_price;
             let gas_price_gwei = gas_price_wei as f64 / 1e9;
-            let total_cost_wei = gas_used * gas_price_wei;
+            let total_cost_wei = gas_used as u128 * gas_price_wei;
             let efficiency_percent = if let Some(gas_limit) = self.gas_limit {
                 (gas_used as f64 / gas_limit as f64) * 100.0
             } else {
@@ -192,8 +192,8 @@ impl<'a> TransactionHandler<'a> {
                 feed_name: self.context.name().to_string(),
                 network: self.network.clone(),
                 tx_hash: format!("0x{tx_hash:x}"),
-                gas_limit: self.gas_limit.unwrap_or(gas_used as u64),
-                gas_used: gas_used as u64,
+                gas_limit: self.gas_limit.unwrap_or(gas_used),
+                gas_used,
                 gas_price_gwei,
                 total_cost_wei,
                 efficiency_percent,

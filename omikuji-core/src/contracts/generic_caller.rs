@@ -9,7 +9,6 @@ use alloy::{
     primitives::{Address, Bytes},
     providers::Provider,
     rpc::types::BlockId,
-    transports::Transport,
 };
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -17,25 +16,22 @@ use std::time::Instant;
 use tracing::{debug, error};
 
 /// Generic contract caller that handles metrics and error handling
-pub struct MetricsAwareContractCaller<T, N, P>
+pub struct MetricsAwareContractCaller<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     provider: Arc<P>,
     contract_address: Address,
     network_name: String,
     feed_name: Option<String>,
-    _phantom_t: std::marker::PhantomData<T>,
     _phantom_n: std::marker::PhantomData<N>,
 }
 
-impl<T, N, P> MetricsAwareContractCaller<T, N, P>
+impl<N, P> MetricsAwareContractCaller<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     /// Create a new metrics-aware contract caller
     pub fn new(
@@ -48,7 +44,6 @@ where
             contract_address,
             network_name: network_name.into(),
             feed_name: None,
-            _phantom_t: std::marker::PhantomData,
             _phantom_n: std::marker::PhantomData,
         }
     }
@@ -78,7 +73,12 @@ where
         );
 
         // Make the call
-        match self.provider.call(&tx).block(BlockId::latest()).await {
+        match self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await
+        {
             Ok(result) => {
                 let duration = start.elapsed();
 
@@ -137,22 +137,20 @@ where
 }
 
 /// Builder for creating contract calls with a fluent interface
-pub struct ContractCallBuilder<T, N, P>
+pub struct ContractCallBuilder<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
-    caller: MetricsAwareContractCaller<T, N, P>,
+    caller: MetricsAwareContractCaller<N, P>,
     method_name: String,
     call_data: Option<Bytes>,
 }
 
-impl<T, N, P> ContractCallBuilder<T, N, P>
+impl<N, P> ContractCallBuilder<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     /// Create a new call builder
     pub fn new(
@@ -162,7 +160,11 @@ where
         method_name: impl Into<String>,
     ) -> Self {
         Self {
-            caller: MetricsAwareContractCaller::new(provider, contract_address, network_name),
+            caller: MetricsAwareContractCaller::<N, P>::new(
+                provider,
+                contract_address,
+                network_name,
+            ),
             method_name: method_name.into(),
             call_data: None,
         }
@@ -205,15 +207,14 @@ where
 }
 
 /// Create a standard contract reader for common read operations
-pub fn create_contract_reader<T, N, P>(
+pub fn create_contract_reader<N, P>(
     provider: Arc<P>,
     contract_address: Address,
     network_name: impl Into<String>,
-) -> MetricsAwareContractCaller<T, N, P>
+) -> MetricsAwareContractCaller<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     MetricsAwareContractCaller::new(provider, contract_address, network_name)
 }
@@ -227,11 +228,11 @@ mod tests {
     fn test_metrics_aware_caller_creation() {
         let provider = Arc::new(
             alloy::providers::ProviderBuilder::new()
-                .on_http("http://localhost:8545".parse().unwrap()),
+                .connect_http("http://localhost:8545".parse().unwrap()),
         );
         let address = address!("0000000000000000000000000000000000000000");
 
-        let _caller = MetricsAwareContractCaller::<_, alloy::network::Ethereum, _>::new(
+        let _caller = MetricsAwareContractCaller::<alloy::network::Ethereum, _>::new(
             provider,
             address,
             "test-network",
@@ -243,11 +244,11 @@ mod tests {
     fn test_call_builder_creation() {
         let provider = Arc::new(
             alloy::providers::ProviderBuilder::new()
-                .on_http("http://localhost:8545".parse().unwrap()),
+                .connect_http("http://localhost:8545".parse().unwrap()),
         );
         let address = address!("0000000000000000000000000000000000000000");
 
-        let _builder = ContractCallBuilder::<_, alloy::network::Ethereum, _>::new(
+        let _builder = ContractCallBuilder::<alloy::network::Ethereum, _>::new(
             provider,
             address,
             "test-network",

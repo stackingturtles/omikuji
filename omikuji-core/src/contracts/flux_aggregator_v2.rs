@@ -10,13 +10,12 @@ use crate::metrics::{
     MetricsContext, RetryMetricsRecorder, TimedOperationRecorder, TransactionMetricsRecorder,
 };
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
+    network::TransactionBuilder,
     primitives::{Address, I256, U256},
     providers::Provider,
     rpc::types::{BlockId, TransactionReceipt, TransactionRequest},
     sol,
     sol_types::SolCall,
-    transports::Transport,
 };
 use anyhow::Result;
 use std::sync::Arc;
@@ -34,21 +33,19 @@ sol! {
 }
 
 /// Refactored FluxAggregator contract with consolidated metrics
-pub struct FluxAggregatorContractV2<T: Transport + Clone, P: Provider<T, Ethereum>> {
+pub struct FluxAggregatorContractV2<P: Provider + Clone> {
     address: Address,
     provider: P,
     metrics_context: MetricsContext,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContractV2<T, P> {
+impl<P: Provider + Clone> FluxAggregatorContractV2<P> {
     /// Create a new FluxAggregator contract instance with metrics context
     pub fn new(address: Address, provider: P, feed_name: &str, network: &str) -> Self {
         Self {
             address,
             provider,
             metrics_context: MetricsContext::new(feed_name, network),
-            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -63,9 +60,13 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                 .to(self.address)
                 .input(call.abi_encode().into());
 
-            let result = self.provider.call(&tx).block(BlockId::latest()).await?;
-            let decoded = IFluxAggregator::latestAnswerCall::abi_decode_returns(&result, true)?;
-            Ok(decoded._0)
+            let result = self
+                .provider
+                .call(tx.clone())
+                .block(BlockId::latest())
+                .await?;
+            let decoded = IFluxAggregator::latestAnswerCall::abi_decode_returns(&result)?;
+            Ok(decoded)
         }
         .await;
 
@@ -117,10 +118,8 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         }
 
         // Estimate gas
-        let gas_estimator = crate::gas::GasEstimator::<T, P>::new(
-            Arc::new(self.provider.clone()),
-            network_config.clone(),
-        );
+        let gas_estimator =
+            crate::gas::GasEstimator::new(Arc::new(self.provider.clone()), network_config.clone());
         let mut gas_estimate = gas_estimator.estimate_gas(&tx).await?;
 
         // Retry loop with consolidated metrics
@@ -342,7 +341,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
             feed_name: self.metrics_context.feed_name().to_string(),
             network: self.metrics_context.network().to_string(),
             gas_limit: gas_limit.to::<u64>(),
-            gas_used: gas_used as u64,
+            gas_used,
             gas_price_gwei,
             total_cost_wei: total_cost_wei.to::<u128>(),
             efficiency_percent,

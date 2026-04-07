@@ -6,7 +6,6 @@ use alloy::{
     },
     providers::Provider,
     rpc::types::TransactionRequest,
-    transports::Transport,
 };
 use anyhow::Result;
 use std::sync::Arc;
@@ -25,18 +24,16 @@ pub struct GasEstimate {
 }
 
 /// Gas estimator that handles both legacy and EIP-1559 transactions
-pub struct GasEstimator<T: Transport + Clone, P: Provider<T> + Clone> {
+pub struct GasEstimator<P: Provider + Clone> {
     provider: Arc<P>,
     network_config: Network,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Transport + Clone, P: Provider<T> + Clone> GasEstimator<T, P> {
+impl<P: Provider + Clone> GasEstimator<P> {
     pub fn new(provider: Arc<P>, network_config: Network) -> Self {
         Self {
             provider,
             network_config,
-            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -105,7 +102,7 @@ impl<T: Transport + Clone, P: Provider<T> + Clone> GasEstimator<T, P> {
         }
 
         // Otherwise estimate
-        match self.provider.estimate_gas(tx).await {
+        match self.provider.estimate_gas(tx.clone()).await {
             Ok(estimated) => {
                 // Apply multiplier for safety margin
                 let multiplier = gas_config.gas_multiplier;
@@ -260,17 +257,20 @@ mod tests {
     use crate::config::models::{FeeBumpingConfig, GasConfig, Network, NetworkNode};
     use alloy::{
         node_bindings::{Anvil, AnvilInstance},
-        providers::{ProviderBuilder, RootProvider},
-        transports::http::{Client, Http},
+        providers::{
+            fillers::FillProvider, utils::JoinedRecommendedFillers, ProviderBuilder, RootProvider,
+        },
     };
+
+    type TestProvider = FillProvider<JoinedRecommendedFillers, RootProvider>;
 
     /// Create an Anvil-backed provider for tests.
     /// Returns the AnvilInstance (must stay alive) and the provider.
-    fn anvil_provider() -> (AnvilInstance, Arc<RootProvider<Http<Client>>>) {
+    fn anvil_provider() -> (AnvilInstance, Arc<TestProvider>) {
         let anvil = Anvil::new()
             .try_spawn()
             .expect("Anvil required for this test");
-        let provider = Arc::new(ProviderBuilder::new().on_http(anvil.endpoint_url()));
+        let provider = Arc::new(ProviderBuilder::new().connect_http(anvil.endpoint_url()));
         (anvil, provider)
     }
 

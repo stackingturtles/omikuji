@@ -6,33 +6,28 @@ use alloy::{
     network::{Network, ReceiptResponse, TransactionBuilder},
     primitives::{Address, U256},
     providers::Provider,
-    transports::Transport,
 };
 use anyhow::{anyhow, Context, Result};
 use std::sync::Arc;
 use tracing::{debug, error, info, trace};
 
-pub struct FunctionExecutor<T, N, P>
+pub struct FunctionExecutor<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     provider: Arc<P>,
-    _phantom_t: std::marker::PhantomData<T>,
     _phantom_n: std::marker::PhantomData<N>,
 }
 
-impl<T, N, P> FunctionExecutor<T, N, P>
+impl<N, P> FunctionExecutor<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     pub fn new(provider: Arc<P>) -> Self {
         Self {
             provider,
-            _phantom_t: std::marker::PhantomData,
             _phantom_n: std::marker::PhantomData,
         }
     }
@@ -376,10 +371,10 @@ mod tests {
     fn test_parse_function_signature() {
         // Use a dummy type for testing
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -397,10 +392,10 @@ mod tests {
     fn test_encode_single_parameter() {
         // Use a dummy type for testing
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -429,10 +424,10 @@ mod tests {
     #[test]
     fn test_parse_function_signature_complex() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -460,10 +455,10 @@ mod tests {
     #[test]
     fn test_encode_parameter_array_types() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -498,10 +493,10 @@ mod tests {
     #[test]
     fn test_encode_parameter_bool() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -523,10 +518,10 @@ mod tests {
     #[test]
     fn test_encode_parameter_uint256_string() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -544,10 +539,10 @@ mod tests {
     #[test]
     fn test_encode_parameters_mismatch() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -564,10 +559,10 @@ mod tests {
     #[test]
     fn test_encode_parameter_invalid_types() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 
@@ -591,10 +586,10 @@ mod tests {
     #[test]
     fn test_create_param_definitions() {
         type DummyExecutor = FunctionExecutor<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
             alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
+            alloy::providers::fillers::FillProvider<
+                alloy::providers::utils::JoinedRecommendedFillers,
+                alloy::providers::RootProvider,
             >,
         >;
 

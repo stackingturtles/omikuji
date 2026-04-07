@@ -9,9 +9,11 @@ use std::time::Instant;
 
 use alloy::{
     primitives::Address,
-    providers::{Provider, ProviderBuilder, RootProvider},
+    providers::{
+        fillers::FillProvider, utils::JoinedRecommendedFillers, Provider, ProviderBuilder,
+        RootProvider,
+    },
     signers::local::PrivateKeySigner,
-    transports::http::{Client, Http},
 };
 use anyhow::Result;
 use secrecy::ExposeSecret;
@@ -26,7 +28,7 @@ use crate::metrics::NetworkMetrics;
 use crate::wallet::key_storage::KeyStorage;
 
 /// Type alias for the alloy provider we will use
-pub type EthProvider = RootProvider<Http<Client>>;
+pub type EthProvider = FillProvider<JoinedRecommendedFillers, RootProvider>;
 
 /// Manages the connections to different EVM networks (refactored version)
 pub struct NetworkManagerV2 {
@@ -240,9 +242,7 @@ impl NetworkManagerV2 {
         let url = Url::parse(rpc_url)
             .map_err(|e| NetworkOperationError::invalid_rpc_url(rpc_url, e))?;
 
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .on_http(url);
+        let provider = ProviderBuilder::new().connect_http(url);
 
         Ok(provider)
     }

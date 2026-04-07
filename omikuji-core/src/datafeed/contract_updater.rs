@@ -1,9 +1,8 @@
 use alloy::{
-    network::{Ethereum, EthereumWallet},
+    network::EthereumWallet,
     primitives::{I256, U256},
-    providers::{Provider, ProviderBuilder, RootProvider},
+    providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
-    transports::http::{Client, Http},
 };
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -88,7 +87,7 @@ impl<'a> ContractUpdater<'a> {
     async fn get_contract_for_read(
         &self,
         datafeed: &Datafeed,
-    ) -> Result<FluxAggregatorContract<Http<Client>, RootProvider<Http<Client>>>> {
+    ) -> Result<FluxAggregatorContract<crate::network::EthProvider>> {
         let provider = self.network_manager.get_provider(&datafeed.networks)?;
         let address = parse_address(&datafeed.contract_address)?;
         Ok(create_contract_with_provider(
@@ -98,10 +97,7 @@ impl<'a> ContractUpdater<'a> {
     }
 
     /// Creates a provider with signer for write operations
-    async fn create_signer_provider(
-        &self,
-        network_name: &str,
-    ) -> Result<impl Provider<Http<Client>, Ethereum> + Clone> {
+    async fn create_signer_provider(&self, network_name: &str) -> Result<impl Provider + Clone> {
         // Get the private key and RPC URL
         let private_key = self
             .network_manager
@@ -121,10 +117,7 @@ impl<'a> ContractUpdater<'a> {
         let url =
             Url::parse(rpc_url).with_context(|| format!("Failed to parse RPC URL: {rpc_url}"))?;
 
-        let provider_with_wallet = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_http(url);
+        let provider_with_wallet = ProviderBuilder::new().wallet(wallet).connect_http(url);
 
         Ok(provider_with_wallet)
     }

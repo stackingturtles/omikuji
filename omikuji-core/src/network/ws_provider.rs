@@ -3,9 +3,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use alloy::{
-    providers::{Provider, ProviderBuilder, RootProvider, WsConnect},
-    pubsub::PubSubFrontend,
+use alloy::providers::{
+    fillers::FillProvider, utils::JoinedRecommendedFillers, Provider, ProviderBuilder,
+    RootProvider, WsConnect,
 };
 use anyhow::{Context, Result};
 use backon::{ExponentialBuilder, Retryable};
@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 
 /// Type alias for WebSocket provider
-pub type WsProvider = RootProvider<PubSubFrontend>;
+pub type WsProvider = FillProvider<JoinedRecommendedFillers, RootProvider>;
 
 /// Manages WebSocket connections with automatic reconnection
 pub struct WsProviderManager {
@@ -109,7 +109,7 @@ impl WsProviderManager {
 
         let ws_connect = WsConnect::new(url);
         let provider = ProviderBuilder::new()
-            .on_ws(ws_connect)
+            .connect_ws(ws_connect)
             .await
             .with_context(|| "Failed to create WebSocket provider")?;
 

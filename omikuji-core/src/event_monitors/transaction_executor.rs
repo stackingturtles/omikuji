@@ -262,7 +262,7 @@ impl TransactionExecutor {
                 event_tx_hash: event.transaction_hash.clone(),
                 monitor_name: monitor.name.clone(),
                 function_signature: call.function.clone(),
-                gas_used: receipt.gas_used,
+                gas_used: receipt.gas_used.into(),
                 value_wei: value.to_string(),
                 status: if receipt.status() {
                     "success"
@@ -294,15 +294,7 @@ impl TransactionExecutor {
     }
 
     /// Create a signer provider for transactions
-    async fn create_signer_provider(
-        &self,
-        network_name: &str,
-    ) -> Result<
-        impl Provider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
-                alloy::network::Ethereum,
-            > + Clone,
-    > {
+    async fn create_signer_provider(&self, network_name: &str) -> Result<impl Provider + Clone> {
         use alloy::network::EthereumWallet;
         use alloy::providers::ProviderBuilder;
         use alloy::signers::local::PrivateKeySigner;
@@ -339,10 +331,7 @@ impl TransactionExecutor {
                 reason: format!("Failed to parse RPC URL: {e}"),
             })?;
 
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_http(url);
+        let provider = ProviderBuilder::new().wallet(wallet).connect_http(url);
 
         Ok(provider)
     }

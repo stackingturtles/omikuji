@@ -55,7 +55,7 @@ async fn check_one_node(
     };
 
     // 2. Create provider
-    let provider = ProviderBuilder::new().on_http(url);
+    let provider = ProviderBuilder::new().connect_http(url);
 
     // 3. Get chain ID
     let chain_id = match tokio::time::timeout(timeout, provider.get_chain_id()).await {

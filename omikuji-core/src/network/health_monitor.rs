@@ -150,10 +150,7 @@ impl NetworkHealthMonitor {
         let block_number = self.update_chain_head(network_name, &provider).await?;
 
         // Get block details for more metrics
-        if let Ok(Some(block)) = provider
-            .get_block_by_number(block_number.into(), false.into())
-            .await
-        {
+        if let Ok(Some(block)) = provider.get_block_by_number(block_number.into()).await {
             // Update block timestamp
             let timestamp = block.header.timestamp;
             NetworkMetrics::update_last_block_timestamp(network_name, timestamp);

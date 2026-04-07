@@ -13,7 +13,6 @@ use alloy::{
     primitives::{Address, Bytes},
     providers::Provider,
     rpc::types::BlockId,
-    transports::Transport,
 };
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -21,25 +20,22 @@ use std::time::Instant;
 use tracing::{debug, error, info};
 
 /// Common contract interaction builder
-pub struct ContractInteraction<T, N, P>
+pub struct ContractInteraction<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     provider: Arc<P>,
     contract_address: Address,
     network_config: NetworkConfig,
     feed_name: Option<String>,
-    _phantom_t: std::marker::PhantomData<T>,
     _phantom_n: std::marker::PhantomData<N>,
 }
 
-impl<T, N, P> ContractInteraction<T, N, P>
+impl<N, P> ContractInteraction<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     /// Create a new contract interaction builder
     pub fn new(provider: Arc<P>, contract_address: Address, network_config: NetworkConfig) -> Self {
@@ -48,7 +44,6 @@ where
             contract_address,
             network_config,
             feed_name: None,
-            _phantom_t: std::marker::PhantomData,
             _phantom_n: std::marker::PhantomData,
         }
     }
@@ -75,7 +70,12 @@ where
         tx.set_to(self.contract_address);
         tx.set_input(call_data.into());
 
-        match self.provider.call(&tx).block(BlockId::latest()).await {
+        match self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await
+        {
             Ok(result) => {
                 let duration = start.elapsed();
 
@@ -243,7 +243,10 @@ where
                     {
                         Ok(Ok(receipt)) => {
                             if receipt.status() {
-                                TransactionLogger::log_confirmation(tx_hash, receipt.gas_used());
+                                TransactionLogger::log_confirmation(
+                                    tx_hash,
+                                    receipt.gas_used().into(),
+                                );
                                 return Ok(receipt);
                             } else {
                                 error!("Transaction failed: 0x{:x}", tx_hash);
@@ -331,20 +334,18 @@ where
 }
 
 /// Simplified contract caller for read-only operations
-pub struct ContractReader<T, N, P>
+pub struct ContractReader<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
-    interaction: ContractInteraction<T, N, P>,
+    interaction: ContractInteraction<N, P>,
 }
 
-impl<T, N, P> ContractReader<T, N, P>
+impl<N, P> ContractReader<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N>,
+    P: Provider<N>,
 {
     pub fn new(provider: Arc<P>, contract_address: Address, network_name: String) -> Self {
         // Create a minimal network config for read operations
@@ -402,19 +403,15 @@ mod tests {
         let network_config = NetworkConfig::default();
 
         // Test that we can create and configure a contract interaction
-        let _interaction = ContractInteraction::<
-            alloy::transports::http::Http<alloy::transports::http::Client>,
-            alloy::network::Ethereum,
-            alloy::providers::RootProvider<
-                alloy::transports::http::Http<alloy::transports::http::Client>,
-            >,
-        >::new(
-            Arc::new(alloy::providers::RootProvider::new_http(
-                "http://localhost:8545".parse().unwrap(),
-            )),
-            contract_address,
-            network_config,
-        )
-        .with_feed_name("test_feed".to_string());
+        let _interaction =
+            ContractInteraction::<alloy::network::Ethereum, alloy::providers::RootProvider>::new(
+                Arc::new(
+                    alloy::providers::ProviderBuilder::new()
+                        .connect_http("http://localhost:8545".parse().unwrap()),
+                ),
+                contract_address,
+                network_config,
+            )
+            .with_feed_name("test_feed".to_string());
     }
 }

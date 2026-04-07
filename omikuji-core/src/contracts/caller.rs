@@ -1,25 +1,22 @@
 use crate::metrics::ContractMetrics;
 use alloy::{
-    network::Ethereum,
     primitives::{Address, I256, U256},
     providers::Provider,
     rpc::types::{BlockId, TransactionRequest},
     sol_types::SolCall,
-    transports::Transport,
 };
 use anyhow::Result;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
 
-pub struct ContractCaller<T: Transport + Clone, P: Provider<T, Ethereum>> {
+pub struct ContractCaller<P: Provider> {
     provider: P,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Transport + Clone, P: Provider<T, Ethereum>> ContractCaller<T, P> {
+impl<P: Provider> ContractCaller<P> {
     pub fn new(provider: P) -> Self {
-        Self { provider, _phantom: std::marker::PhantomData }
+        Self { provider }
     }
 
     pub async fn call<'a, C, R>(
@@ -40,7 +37,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum>> ContractCaller<T, P> {
             .to(address)
             .input(call_data.abi_encode().into());
 
-        let result = self.provider.call(&tx).block(BlockId::latest()).await;
+        let result = self.provider.call(tx.clone()).block(BlockId::latest()).await;
         let duration = start.elapsed();
 
         match result {
@@ -55,7 +52,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum>> ContractCaller<T, P> {
                         None,
                     );
                 }
-                let decoded = C::abi_decode_returns(&res, true)?;
+                let decoded = C::abi_decode_returns(&res)?;
                 Ok(decoded.into())
             }
             Err(e) => {

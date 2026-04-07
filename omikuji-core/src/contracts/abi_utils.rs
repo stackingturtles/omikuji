@@ -161,7 +161,7 @@ pub fn encode_function_call(
 /// Decode a function return value using a Function definition
 pub fn decode_function_return(function: &Function, data: &Bytes) -> Result<Vec<DynSolValue>> {
     function
-        .abi_decode_output(data, true)
+        .abi_decode_output(data)
         .context("Failed to decode function return value")
 }
 

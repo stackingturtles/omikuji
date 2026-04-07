@@ -9,18 +9,16 @@ use alloy::{
     network::{Network, TransactionBuilder},
     primitives::{Address, Bytes, U256},
     providers::Provider,
-    transports::Transport,
 };
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::debug;
 
 /// Transaction builder that handles gas configuration
-pub struct GasAwareTransactionBuilder<T, N, P>
+pub struct GasAwareTransactionBuilder<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N> + Clone,
+    P: Provider<N> + Clone,
 {
     to: Address,
     data: Bytes,
@@ -28,16 +26,14 @@ where
     network_config: NetworkConfig,
     gas_config_override: Option<GasConfig>,
     gas_limit_override: Option<u64>,
-    _phantom_t: std::marker::PhantomData<T>,
     _phantom_n: std::marker::PhantomData<N>,
     _phantom_p: std::marker::PhantomData<P>,
 }
 
-impl<T, N, P> GasAwareTransactionBuilder<T, N, P>
+impl<N, P> GasAwareTransactionBuilder<N, P>
 where
-    T: Transport + Clone,
     N: Network,
-    P: Provider<T, N> + Clone,
+    P: Provider<N> + Clone,
 {
     /// Create a new transaction builder
     pub fn new(_provider: Arc<P>, to: Address, data: Bytes, network_config: NetworkConfig) -> Self {
@@ -48,7 +44,6 @@ where
             network_config,
             gas_config_override: None,
             gas_limit_override: None,
-            _phantom_t: std::marker::PhantomData,
             _phantom_n: std::marker::PhantomData,
             _phantom_p: std::marker::PhantomData,
         }
@@ -304,17 +299,16 @@ mod tests {
     use alloy::primitives::address;
     use alloy::rpc::types::TransactionRequest as TxReq;
 
-    type HttpTransport = alloy::transports::http::Http<alloy::transports::http::Client>;
-    type TestBuilder = GasAwareTransactionBuilder<
-        HttpTransport,
-        alloy::network::Ethereum,
-        alloy::providers::RootProvider<HttpTransport>,
+    type TestProvider = alloy::providers::fillers::FillProvider<
+        alloy::providers::utils::JoinedRecommendedFillers,
+        alloy::providers::RootProvider,
     >;
+    type TestBuilder = GasAwareTransactionBuilder<alloy::network::Ethereum, TestProvider>;
 
-    fn test_provider() -> Arc<alloy::providers::RootProvider<HttpTransport>> {
+    fn test_provider() -> Arc<TestProvider> {
         Arc::new(
             alloy::providers::ProviderBuilder::new()
-                .on_http("http://localhost:8545".parse().unwrap()),
+                .connect_http("http://localhost:8545".parse().unwrap()),
         )
     }
 

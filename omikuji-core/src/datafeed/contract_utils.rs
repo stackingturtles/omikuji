@@ -1,10 +1,8 @@
 use crate::config::models::Datafeed;
 use crate::contracts::FluxAggregatorContract;
 use alloy::{
-    network::Ethereum,
     primitives::{Address, I256},
     providers::Provider,
-    transports::Transport,
 };
 use anyhow::{Context, Result};
 use tracing::warn;
@@ -17,13 +15,9 @@ pub fn parse_address(address_str: &str) -> Result<Address> {
 }
 
 /// Creates a FluxAggregator contract instance with a provider
-pub fn create_contract_with_provider<T, P>(
-    address: Address,
-    provider: P,
-) -> FluxAggregatorContract<T, P>
+pub fn create_contract_with_provider<P>(address: Address, provider: P) -> FluxAggregatorContract<P>
 where
-    T: Transport + Clone,
-    P: Provider<T, Ethereum> + Clone,
+    P: Provider + Clone,
 {
     FluxAggregatorContract::new(address, provider)
 }

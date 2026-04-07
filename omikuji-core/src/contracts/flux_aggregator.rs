@@ -4,13 +4,12 @@ use crate::gas::GasEstimate;
 use crate::metrics::gas_metrics::{GasMetrics, TransactionDetails};
 use crate::metrics::ContractMetrics;
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
+    network::TransactionBuilder,
     primitives::{Address, I256, U256},
     providers::Provider,
     rpc::types::{BlockId, TransactionReceipt, TransactionRequest},
     sol,
     sol_types::SolCall,
-    transports::Transport,
 };
 use anyhow::Result;
 use std::sync::Arc;
@@ -40,20 +39,15 @@ sol! {
 }
 
 /// Wrapper for FluxAggregator contract interactions
-pub struct FluxAggregatorContract<T: Transport + Clone, P: Provider<T, Ethereum>> {
+pub struct FluxAggregatorContract<P: Provider + Clone> {
     address: Address,
     provider: P,
-    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContract<T, P> {
+impl<P: Provider + Clone> FluxAggregatorContract<P> {
     /// Create a new FluxAggregator contract instance
     pub fn new(address: Address, provider: P) -> Self {
-        Self {
-            address,
-            provider,
-            _phantom: std::marker::PhantomData,
-        }
+        Self { address, provider }
     }
 
     /// Get the latest answer from the contract
@@ -73,7 +67,12 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
             .to(self.address)
             .input(call.abi_encode().into());
 
-        match self.provider.call(&tx).block(BlockId::latest()).await {
+        match self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await
+        {
             Ok(result) => {
                 let duration = start.elapsed();
 
@@ -89,8 +88,8 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                     );
                 }
 
-                let decoded = IFluxAggregator::latestAnswerCall::abi_decode_returns(&result, true)?;
-                Ok(decoded._0)
+                let decoded = IFluxAggregator::latestAnswerCall::abi_decode_returns(&result)?;
+                Ok(decoded)
             }
             Err(e) => {
                 let duration = start.elapsed();
@@ -129,7 +128,12 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
             .to(self.address)
             .input(call.abi_encode().into());
 
-        match self.provider.call(&tx).block(BlockId::latest()).await {
+        match self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await
+        {
             Ok(result) => {
                 let duration = start.elapsed();
 
@@ -145,9 +149,8 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                     );
                 }
 
-                let decoded =
-                    IFluxAggregator::latestTimestampCall::abi_decode_returns(&result, true)?;
-                Ok(decoded._0)
+                let decoded = IFluxAggregator::latestTimestampCall::abi_decode_returns(&result)?;
+                Ok(decoded)
             }
             Err(e) => {
                 let duration = start.elapsed();
@@ -186,7 +189,12 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
             .to(self.address)
             .input(call.abi_encode().into());
 
-        match self.provider.call(&tx).block(BlockId::latest()).await {
+        match self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await
+        {
             Ok(result) => {
                 let duration = start.elapsed();
 
@@ -202,8 +210,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
                     );
                 }
 
-                let decoded =
-                    IFluxAggregator::latestRoundDataCall::abi_decode_returns(&result, true)?;
+                let decoded = IFluxAggregator::latestRoundDataCall::abi_decode_returns(&result)?;
                 Ok((
                     U256::from(decoded.roundId),
                     decoded.answer,
@@ -257,10 +264,14 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         let tx = TransactionRequest::default()
             .to(self.address)
             .input(call.abi_encode().into());
-        let result = self.provider.call(&tx).block(BlockId::latest()).await?;
+        let result = self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await?;
 
-        let decoded = IFluxAggregator::latestRoundCall::abi_decode_returns(&result, true)?;
-        Ok(decoded._0)
+        let decoded = IFluxAggregator::latestRoundCall::abi_decode_returns(&result)?;
+        Ok(decoded)
     }
 
     /// Get decimals
@@ -269,10 +280,14 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         let tx = TransactionRequest::default()
             .to(self.address)
             .input(call.abi_encode().into());
-        let result = self.provider.call(&tx).block(BlockId::latest()).await?;
+        let result = self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await?;
 
-        let decoded = IFluxAggregator::decimalsCall::abi_decode_returns(&result, true)?;
-        Ok(decoded._0)
+        let decoded = IFluxAggregator::decimalsCall::abi_decode_returns(&result)?;
+        Ok(decoded)
     }
 
     /// Get min submission value
@@ -281,10 +296,14 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         let tx = TransactionRequest::default()
             .to(self.address)
             .input(call.abi_encode().into());
-        let result = self.provider.call(&tx).block(BlockId::latest()).await?;
+        let result = self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await?;
 
-        let decoded = IFluxAggregator::minSubmissionValueCall::abi_decode_returns(&result, true)?;
-        Ok(decoded._0)
+        let decoded = IFluxAggregator::minSubmissionValueCall::abi_decode_returns(&result)?;
+        Ok(decoded)
     }
 
     /// Get max submission value
@@ -293,10 +312,14 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         let tx = TransactionRequest::default()
             .to(self.address)
             .input(call.abi_encode().into());
-        let result = self.provider.call(&tx).block(BlockId::latest()).await?;
+        let result = self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await?;
 
-        let decoded = IFluxAggregator::maxSubmissionValueCall::abi_decode_returns(&result, true)?;
-        Ok(decoded._0)
+        let decoded = IFluxAggregator::maxSubmissionValueCall::abi_decode_returns(&result)?;
+        Ok(decoded)
     }
 
     /// Get oracle round state to check eligibility and round info
@@ -312,9 +335,13 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         let tx = TransactionRequest::default()
             .to(self.address)
             .input(call.abi_encode().into());
-        let result = self.provider.call(&tx).block(BlockId::latest()).await?;
+        let result = self
+            .provider
+            .call(tx.clone())
+            .block(BlockId::latest())
+            .await?;
 
-        let decoded = IFluxAggregator::oracleRoundStateCall::abi_decode_returns(&result, true)?;
+        let decoded = IFluxAggregator::oracleRoundStateCall::abi_decode_returns(&result)?;
         Ok((
             decoded._eligibleToSubmit,
             decoded._roundId,
@@ -357,10 +384,8 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
         }
 
         // Estimate gas
-        let gas_estimator = crate::gas::GasEstimator::<T, P>::new(
-            Arc::new(self.provider.clone()),
-            network_config.clone(),
-        );
+        let gas_estimator =
+            crate::gas::GasEstimator::new(Arc::new(self.provider.clone()), network_config.clone());
         let mut gas_estimate = gas_estimator.estimate_gas(&tx).await?;
 
         let mut attempt = 0;
@@ -600,7 +625,7 @@ impl<T: Transport + Clone, P: Provider<T, Ethereum> + Clone> FluxAggregatorContr
             feed_name: feed_name.to_string(),
             network: network_name.to_string(),
             gas_limit: gas_limit.to::<u64>(),
-            gas_used: gas_used as u64,
+            gas_used,
             gas_price_gwei,
             total_cost_wei: total_cost_wei.to::<u128>(),
             efficiency_percent,

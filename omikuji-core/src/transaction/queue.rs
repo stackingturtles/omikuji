@@ -339,10 +339,7 @@ impl TransactionQueue {
         let url =
             Url::parse(rpc_url).with_context(|| format!("Failed to parse RPC URL: {rpc_url}"))?;
 
-        let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
-            .wallet(wallet)
-            .on_http(url);
+        let provider = ProviderBuilder::new().wallet(wallet).connect_http(url);
 
         // Build transaction with explicit nonce and correct round ID from oracle state
         let call = IFluxAggregator::submitCall {

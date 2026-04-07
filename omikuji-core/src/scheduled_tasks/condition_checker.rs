@@ -5,7 +5,6 @@ use alloy::{
     network::Network,
     primitives::{Address, U256},
     providers::Provider,
-    transports::Transport,
 };
 use anyhow::{anyhow, Result};
 use std::sync::Arc;
@@ -14,14 +13,10 @@ use tracing::{debug, error, info, trace};
 pub struct ConditionChecker;
 
 impl ConditionChecker {
-    pub async fn check_condition<T, N, P>(
-        provider: Arc<P>,
-        condition: &CheckCondition,
-    ) -> Result<bool>
+    pub async fn check_condition<N, P>(provider: Arc<P>, condition: &CheckCondition) -> Result<bool>
     where
-        T: Transport + Clone,
         N: Network,
-        P: Provider<T, N>,
+        P: Provider<N>,
         N::TransactionRequest: Default + From<alloy::rpc::types::TransactionRequest>,
     {
         debug!("=== Checking condition ===");
@@ -67,16 +62,15 @@ impl ConditionChecker {
         }
     }
 
-    async fn check_property<T, N, P>(
+    async fn check_property<N, P>(
         provider: Arc<P>,
         contract_address: &str,
         property: &str,
         expected_value: &serde_json::Value,
     ) -> Result<bool>
     where
-        T: Transport + Clone,
         N: Network,
-        P: Provider<T, N>,
+        P: Provider<N>,
         N::TransactionRequest: Default + From<alloy::rpc::types::TransactionRequest>,
     {
         debug!("Parsing contract address: {}", contract_address);
@@ -112,14 +106,14 @@ impl ConditionChecker {
 
         // Make the call
         debug!("Making eth_call for property '{}'...", property);
-        let result = provider.call(&network_tx).await.map_err(|e| {
+        let result = provider.call(network_tx.clone()).await.map_err(|e| {
             error!("eth_call failed for property '{}': {:?}", property, e);
             e
         })?;
         debug!("eth_call succeeded, result: 0x{}", hex::encode(&result));
 
         // Decode the result
-        let decoded = function.abi_decode_output(&result, true).map_err(|e| {
+        let decoded = function.abi_decode_output(&result).map_err(|e| {
             error!(
                 "Failed to decode result for property '{}': {:?}",
                 property, e
@@ -156,16 +150,15 @@ impl ConditionChecker {
         Ok(result_bool == expected_bool)
     }
 
-    async fn check_function<T, N, P>(
+    async fn check_function<N, P>(
         provider: Arc<P>,
         contract_address: &str,
         function: &str,
         expected_value: &serde_json::Value,
     ) -> Result<bool>
     where
-        T: Transport + Clone,
         N: Network,
-        P: Provider<T, N>,
+        P: Provider<N>,
         N::TransactionRequest: Default + From<alloy::rpc::types::TransactionRequest>,
     {
         debug!(
@@ -216,7 +209,7 @@ impl ConditionChecker {
 
         // Make the call
         debug!("Making eth_call to contract...");
-        let result = provider.call(&network_tx).await.map_err(|e| {
+        let result = provider.call(network_tx.clone()).await.map_err(|e| {
             debug!("eth_call failed: {}", e);
             e
         })?;
@@ -224,7 +217,7 @@ impl ConditionChecker {
 
         // Decode the result
         debug!("Decoding result for function '{}'...", func_name);
-        let decoded = func_def.abi_decode_output(&result, true).map_err(|e| {
+        let decoded = func_def.abi_decode_output(&result).map_err(|e| {
             error!(
                 "Failed to decode result for function '{}': {:?}",
                 func_name, e

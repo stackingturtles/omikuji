@@ -4,9 +4,11 @@ use std::time::Instant;
 
 use alloy::{
     primitives::Address,
-    providers::{Provider, ProviderBuilder, RootProvider},
+    providers::{
+        fillers::FillProvider, utils::JoinedRecommendedFillers, Provider, ProviderBuilder,
+        RootProvider,
+    },
     signers::local::PrivateKeySigner,
-    transports::http::{Client, Http},
 };
 use anyhow::{Context, Result};
 use secrecy::ExposeSecret;
@@ -34,7 +36,7 @@ pub enum NetworkError {
 }
 
 /// Type alias for the alloy provider we will use
-pub type EthProvider = RootProvider<Http<Client>>;
+pub type EthProvider = FillProvider<JoinedRecommendedFillers, RootProvider>;
 
 /// Manages the connections to different EVM networks
 pub struct NetworkManager {
@@ -373,7 +375,7 @@ impl NetworkManager {
         let url =
             Url::parse(rpc_url).with_context(|| format!("Failed to parse RPC URL: {rpc_url}"))?;
 
-        let provider = ProviderBuilder::new().on_http(url);
+        let provider = ProviderBuilder::new().connect_http(url);
 
         // Test connection by getting the current block number
         let start = Instant::now();

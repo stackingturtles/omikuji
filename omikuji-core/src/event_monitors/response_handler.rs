@@ -220,7 +220,7 @@ impl Handler for ContractCallHandler {
                         context.network.clone(),
                     );
                     metrics_ctx.contract_execution(true);
-                    metrics_ctx.contract_execution_gas(receipt.gas_used);
+                    metrics_ctx.contract_execution_gas(receipt.gas_used.into());
                     // Parse value from call for metrics
                     if let Ok(value) = U256::from_str_radix(&call.value, 10) {
                         metrics_ctx.contract_execution_value(value.to::<u128>());
