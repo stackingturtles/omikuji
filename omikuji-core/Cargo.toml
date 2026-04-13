@@ -32,7 +32,7 @@ tracing-subscriber = "0.3.23"
 
 # Time and scheduling
 chrono = { version = "0.4", features = ["serde"] }
-cron = "0.12"
+cron = "0.16"
 tokio-cron-scheduler = "0.9"
 
 # Ethereum interaction
