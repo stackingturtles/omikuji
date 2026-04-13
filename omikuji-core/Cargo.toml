@@ -80,7 +80,7 @@ keyring = "3.0"
 secrecy = "0.10"
 
 # Vault support (Community edition)
-vaultrs = "0.7"
+vaultrs = "0.8"
 
 # For the plugin registry
 dashmap = "6.0"
