@@ -35,7 +35,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3.23"
 
 # Ethereum interaction
-alloy = { version = "1.6", features = [
+alloy = { version = "2.0", features = [
   "full",
   "node-bindings",
   "signer-local",
