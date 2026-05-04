@@ -24,7 +24,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 
 # Async runtime (full features for runtime module)
-tokio = { version = "1.51", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 
 # Logging
 tracing = "0.1"
@@ -90,7 +90,7 @@ arc-swap = "1.9"
 validator = { version = "0.20", features = ["derive"] }
 
 [dev-dependencies]
-tokio = { version = "1.51", features = ["full", "test-util"] }
+tokio = { version = "1.52", features = ["full", "test-util"] }
 mockall = "0.14"
 mockito = "1.7"
 tempfile = "3.27"
